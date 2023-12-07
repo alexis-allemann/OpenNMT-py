@@ -216,6 +216,21 @@ def main(opt, device_id):
         device_id=device_id,
     )
 
+    train_iters = []
+    for i in range(opt.curriculum_learning_nb_tasks):
+        _train_iter = build_dynamic_dataset_iter(
+            opt,
+            transforms_cls,
+            vocabs,
+            task=CorpusTask.TRAIN,
+            task_id=i,
+            copy=opt.copy_attn,
+            stride=stride,
+            offset=offset,
+            device_id=device_id,
+        )
+        train_iters.append(_train_iter)
+
     valid_iter = build_dynamic_dataset_iter(
         opt,
         transforms_cls,
@@ -235,7 +250,7 @@ def main(opt, device_id):
         train_steps = 0
 
     trainer.train(
-        train_iter,
+        train_iters,
         train_steps,
         save_checkpoint_steps=opt.save_checkpoint_steps,
         valid_iter=valid_iter,

@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "OpenNMT - Train - MSE-PA",
+            "type": "python",
+            "python": "/home/alexis.allemann/miniconda3/envs/mse-pa/bin/python",
+            "request": "launch",
+            "program": "/home/alexis.allemann/workspace/opennmt-new/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "-config",
+                "/home/alexis.allemann/workspace/mse-pa/configs/test.yaml"
+            ]
+        }
+    ]
+}

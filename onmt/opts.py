@@ -117,6 +117,39 @@ def _add_logging_opts(parser, is_train=True):
             action="store_true",
             help="Allow to override some checkpoint opts",
         )
+
+        # Curriculum learning options
+        group.add(
+            "--curriculum_learning_enabled",
+            "-curriculum_learning_enabled",
+            type=bool,
+            default=False,
+        )
+        group.add(
+            "--curriculum_learning_steps",
+            "-curriculum_learning_steps",
+            type=int,
+            default=100,
+        )
+        group.add(
+            "--curriculum_learning_starting_task_id",
+            "-curriculum_learning_starting_task_id",
+            type=int,
+            default=1,
+        )
+        group.add(
+            "--curriculum_learning_scheduler",
+            "-curriculum_learning_scheduler",
+            type=str,
+            default="alternation",
+        )
+        group.add(
+            "--curriculum_learning_nb_tasks",
+            "-curriculum_learning_nb_tasks",
+            type=int,
+            default=1,
+        )
+
     else:
         # Options only during inference
         group.add(

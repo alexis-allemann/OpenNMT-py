@@ -129,6 +129,7 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
         batch_type,
         batch_size,
         batch_size_multiple,
+        task_id=0,
         data_type="text",
         bucket_size=2048,
         bucket_size_init=-1,
@@ -145,6 +146,7 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
         self.vocabs = vocabs
         self.corpora_info = corpora_info
         self.task = task
+        self.task_id = task_id
         self.init_iterators = False
         self.batch_size = batch_size
         self.batch_type = batch_type
@@ -171,7 +173,7 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
 
     @classmethod
     def from_opt(
-        cls, corpora, transforms, vocabs, opt, task, copy, device, stride=1, offset=0
+        cls, corpora, transforms, vocabs, opt, task, copy, device, task_id=0, stride=1, offset=0
     ):
         """Initilize `DynamicDatasetIter` with options parsed from `opt`."""
         corpora_info = {}
@@ -215,6 +217,7 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
             skip_empty_level=skip_empty_level,
             stride=stride,
             offset=offset,
+            task_id=task_id,
         )
 
     def _init_datasets(self, worker_id):
@@ -231,6 +234,7 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
             skip_empty_level=self.skip_empty_level,
             stride=stride,
             offset=offset,
+            task_id=self.task_id,
         )
         datasets_weights = {
             ds_name: int(self.corpora_info[ds_name]["weight"])
@@ -388,6 +392,7 @@ def build_dynamic_dataset_iter(
     vocabs,
     copy=False,
     task=CorpusTask.TRAIN,
+    task_id=0,
     stride=1,
     offset=0,
     src=None,
@@ -442,6 +447,7 @@ def build_dynamic_dataset_iter(
             vocabs,
             opt,
             task,
+            task_id=task_id,
             copy=copy,
             stride=stride,
             offset=offset,

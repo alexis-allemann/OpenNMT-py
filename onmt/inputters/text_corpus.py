@@ -218,11 +218,24 @@ class ParallelCorpusIterator(object):
 
 
 def build_corpora_iters(
-    corpora, transforms, corpora_info, skip_empty_level="warning", stride=1, offset=0
+    corpora,
+    transforms,
+    corpora_info,
+    skip_empty_level="warning",
+    stride=1,
+    offset=0,
+    task_id=0,
+    skip_task_check=False,
 ):
     """Return `ParallelCorpusIterator` for all corpora defined in opts."""
     corpora_iters = dict()
     for c_id, corpus in corpora.items():
+        if (
+            not skip_task_check
+            and "task" in corpora_info[c_id].keys()
+            and corpora_info[c_id]["task"] != task_id + 1
+        ):
+            continue
         transform_names = corpora_info[c_id].get("transforms", [])
         corpus_transform = [
             transforms[name] for name in transform_names if name in transforms

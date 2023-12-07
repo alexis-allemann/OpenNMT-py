@@ -18,6 +18,7 @@ from onmt.utils.loss import LossCompute
 from onmt.utils.logging import logger
 from onmt.utils.scoring_utils import ScoringPreparator
 from onmt.scorers import get_scorers_cls, build_scorers
+from onmt.schedulers import get_scheduler_cls
 
 
 def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
@@ -62,6 +63,10 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     else:
         gpu_rank = -1
         n_gpu = 0
+    curriculum_learning_enabled = opt.curriculum_learning_enabled
+    curriculum_learning_steps = opt.curriculum_learning_steps
+    curriculum_learning_scheduler = opt.curriculum_learning_scheduler
+    curriculum_learning_starting_task_id = opt.curriculum_learning_starting_task_id
 
     earlystopper = (
         onmt.utils.EarlyStopping(
@@ -97,6 +102,10 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         attention_dropout=attention_dropout,
         dropout_steps=dropout_steps,
         zero_out_prompt_loss=zero_out_prompt_loss,
+        curriculum_learning_enabled=curriculum_learning_enabled,
+        curriculum_learning_steps=curriculum_learning_steps,
+        curriculum_learning_scheduler=curriculum_learning_scheduler,
+        curriculum_learning_starting_task_id=curriculum_learning_starting_task_id,
     )
     return trainer
 
@@ -167,6 +176,10 @@ class Trainer(object):
         attention_dropout=[0.1],
         dropout_steps=[0],
         zero_out_prompt_loss=False,
+        curriculum_learning_enabled=False,
+        curriculum_learning_steps=100,
+        curriculum_learning_scheduler="alternation",
+        curriculum_learning_starting_task_id=1,
     ):
         # Basic attributes.
 
@@ -197,6 +210,12 @@ class Trainer(object):
         self.attention_dropout = attention_dropout
         self.dropout_steps = dropout_steps
         self.zero_out_prompt_loss = zero_out_prompt_loss
+        self.curriculum_learning_enabled = curriculum_learning_enabled
+        self.curriculum_learning_steps = curriculum_learning_steps
+        self.curriculum_learning_scheduler = get_scheduler_cls(
+            curriculum_learning_scheduler
+        )
+        self.curriculum_learning_starting_task_id = curriculum_learning_starting_task_id
 
         for i in range(len(self.accum_count_l)):
             assert self.accum_count_l[i] > 0
@@ -270,7 +289,7 @@ class Trainer(object):
 
     def train(
         self,
-        train_iter,
+        train_iters,
         train_steps,
         save_checkpoint_steps=5000,
         valid_iter=None,
@@ -280,7 +299,7 @@ class Trainer(object):
         running validation on ``valid_iter``.
 
         Args:
-            train_iter: An iterator that returns the next training batch.
+            train_iters: An array of iterators that returns the next training batch per task.
             train_steps: Run training for this many iterations.
             save_checkpoint_steps: Save a checkpoint every this many
               iterations.
@@ -302,10 +321,30 @@ class Trainer(object):
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
+        task_id = self.curriculum_learning_starting_task_id - 1
+
         # Let's clean the GPUs before training loop
         torch.cuda.empty_cache()
 
-        for i, (batches, normalization) in enumerate(self._accum_batches(train_iter)):
+        # Initialize batches generators
+        generators = []
+        for i, train_iter in enumerate(train_iters):
+            generators.append(self._accum_batches(train_iter))
+
+        # Initialize curriculum learning's tasks scheduler
+        scheduler = None
+        if self.curriculum_learning_enabled:
+            scheduler = self.curriculum_learning_scheduler(len(generators), task_id)
+
+        for i in range(1, train_steps):
+            batches, normalization = next(generators[task_id])
+
+            # Empirical assertion of dynamic task scheduling
+            # for b in batches:
+            #     for sentence in b["src"]:
+            #         print(
+            #             int(sentence[0][0])
+            #         )  # Prints first subword id of the sentence
 
             step = self.optim.training_step
             # UPDATE DROPOUT
@@ -322,6 +361,14 @@ class Trainer(object):
 
             if self.average_decay > 0 and i % self.average_every == 0:
                 self._update_average(step)
+
+            # Curriculum learning
+            if (
+                self.curriculum_learning_enabled
+                and i % self.curriculum_learning_steps == 0
+            ):
+                logger.info(f"Step : {i} - Task : {task_id+1}")
+                task_id = scheduler.next_task(i, self.model, self.optim)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
