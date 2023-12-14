@@ -9,7 +9,7 @@
             "type": "python",
             "python": "/home/alexis.allemann/miniconda3/envs/mse-pa/bin/python",
             "request": "launch",
-            "program": "/home/alexis.allemann/workspace/opennmt-new/train.py",
+            "program": "/home/alexis.allemann/workspace/opennmt-aal/train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [

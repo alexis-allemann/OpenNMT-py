@@ -9,16 +9,18 @@
           users of this library) for the strategy things we do.
 """
 
-import time
 import sys
-import torch
+import time
 import traceback
+
+import torch
+
 import onmt.utils
-from onmt.utils.loss import LossCompute
-from onmt.utils.logging import logger
-from onmt.utils.scoring_utils import ScoringPreparator
-from onmt.scorers import get_scorers_cls, build_scorers
 from onmt.schedulers import get_scheduler_cls
+from onmt.scorers import build_scorers, get_scorers_cls
+from onmt.utils.logging import logger
+from onmt.utils.loss import LossCompute
+from onmt.utils.scoring_utils import ScoringPreparator
 
 
 def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
@@ -342,9 +344,7 @@ class Trainer(object):
             # Empirical assertion of dynamic task scheduling
             # for b in batches:
             #     for sentence in b["src"]:
-            #         print(
-            #             int(sentence[0][0])
-            #         )  # Prints first subword id of the sentence
+            #         logger.info(f"First subword id of the sentence: {sentence[0][0]}")
 
             step = self.optim.training_step
             # UPDATE DROPOUT
