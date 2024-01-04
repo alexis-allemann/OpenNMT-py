@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "OpenNMT - Train - MSE-PA",
+            "name": "OpenNMT - Debug - MSE-PA",
             "type": "python",
             "python": "/home/alexis.allemann/miniconda3/envs/mse-pa/bin/python",
             "request": "launch",
@@ -14,8 +14,22 @@
             "justMyCode": true,
             "args": [
                 "-config",
-                "/home/alexis.allemann/workspace/mse-pa/configs/test.yaml"
+                "/home/alexis.allemann/workspace/mse-pa/others/debug.yaml"
             ]
-        }
+        },
+        {
+            "name": "Run experiment - MSE-PA",
+            "type": "python",
+            "python": "/home/alexis.allemann/miniconda3/envs/mse-pa/bin/python",
+            "request": "launch",
+            "program": "scripts/run-experiment.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "/home/alexis.allemann/workspace/mse-pa",
+            "args": [
+                // "-starting_step",
+                // "evaluation"
+            ]
+        },
     ]
 }

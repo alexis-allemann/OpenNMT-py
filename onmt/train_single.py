@@ -205,25 +205,27 @@ def main(opt, device_id):
     offset = max(0, device_id) if opt.parallel_mode == "data_parallel" else 0
     stride = max(1, len(opt.gpu_ranks)) if opt.parallel_mode == "data_parallel" else 1
 
-    train_iter = build_dynamic_dataset_iter(
-        opt,
-        transforms_cls,
-        vocabs,
-        task=CorpusTask.TRAIN,
-        copy=opt.copy_attn,
-        stride=stride,
-        offset=offset,
-        device_id=device_id,
-    )
-
     train_iters = []
-    for i in range(opt.curriculum_learning_nb_tasks):
+    if opt.curriculum_learning_enabled:
+        for i in range(opt.curriculum_learning_nb_tasks):
+            _train_iter = build_dynamic_dataset_iter(
+                opt,
+                transforms_cls,
+                vocabs,
+                task=CorpusTask.TRAIN,
+                task_id=i,
+                copy=opt.copy_attn,
+                stride=stride,
+                offset=offset,
+                device_id=device_id,
+            )
+            train_iters.append(_train_iter)
+    else:
         _train_iter = build_dynamic_dataset_iter(
             opt,
             transforms_cls,
             vocabs,
             task=CorpusTask.TRAIN,
-            task_id=i,
             copy=opt.copy_attn,
             stride=stride,
             offset=offset,

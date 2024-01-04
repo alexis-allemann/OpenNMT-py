@@ -337,6 +337,8 @@ class Trainer(object):
         scheduler = None
         if self.curriculum_learning_enabled:
             scheduler = self.curriculum_learning_scheduler(len(generators), task_id)
+        else:
+            task_id = 0
 
         for i in range(1, train_steps):
             batches, normalization = next(generators[task_id])
