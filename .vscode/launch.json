@@ -27,8 +27,8 @@
             "justMyCode": true,
             "cwd": "/home/alexis.allemann/workspace/mse-pa",
             "args": [
-                // "-starting_step",
-                // "evaluation"
+                "-starting_step",
+                "compute_scores",
             ]
         },
     ]
