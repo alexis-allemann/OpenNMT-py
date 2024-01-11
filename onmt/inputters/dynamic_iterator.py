@@ -173,7 +173,17 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
 
     @classmethod
     def from_opt(
-        cls, corpora, transforms, vocabs, opt, task, copy, device, task_id=0, stride=1, offset=0
+        cls,
+        corpora,
+        transforms,
+        vocabs,
+        opt,
+        task,
+        copy,
+        device,
+        task_id=0,
+        stride=1,
+        offset=0,
     ):
         """Initilize `DynamicDatasetIter` with options parsed from `opt`."""
         corpora_info = {}
@@ -374,7 +384,7 @@ class OnDeviceDatasetIter:
         self.device = device
 
     def __iter__(self):
-        for (tensor_batch, bucket_idx) in self.data_iter:
+        for tensor_batch, bucket_idx in self.data_iter:
             for key in tensor_batch.keys():
                 if key not in [
                     "src_ex_vocab",

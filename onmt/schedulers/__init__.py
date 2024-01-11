@@ -28,7 +28,9 @@ def register_scheduler(scheduler):
             )
         if not issubclass(cls, Scheduler):
             raise ValueError(
-                "Scheduler ({}: {}) must extend Scheduler".format(scheduler, cls.__name__)
+                "Scheduler ({}: {}) must extend Scheduler".format(
+                    scheduler, cls.__name__
+                )
             )
         AVAILABLE_SCHEDULERS[scheduler] = cls
         return cls
