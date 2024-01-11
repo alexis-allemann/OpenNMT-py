@@ -330,7 +330,7 @@ class Trainer(object):
 
         # Initialize batches generators
         generators = []
-        for i, train_iter in enumerate(train_iters):
+        for train_iter in train_iters:
             generators.append(self._accum_batches(train_iter))
 
         # Initialize curriculum learning's tasks scheduler
@@ -532,7 +532,10 @@ class Trainer(object):
             tgt_outer = batch["tgt"]
 
             bptt = False
+            oom = False
             for j in range(0, target_size - 1, trunc_size):
+                oom = False
+
                 # 1. Create truncated target.
 
                 tgt = tgt_outer[:, j : j + trunc_size, :]
@@ -573,6 +576,7 @@ class Trainer(object):
                             self.optim.training_step,
                         )
                         torch.cuda.empty_cache()
+                        oom = True
                         if self.n_gpu > 1 and self.parallel_mode == "tensor_parallel":
                             torch.distributed.destroy_process_group()
                             sys.exit()
@@ -586,7 +590,7 @@ class Trainer(object):
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
-        if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
+        if self.n_gpu > 1 and self.parallel_mode == "data_parallel" and not oom:
             grads = [
                 p.grad.data
                 for p in self.model.parameters()

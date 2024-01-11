@@ -431,6 +431,7 @@ def build_dynamic_dataset_iter(
             vocabs,
             opt,
             task,
+            task_id=task_id,
             copy=copy,
             stride=stride,
             offset=offset,
