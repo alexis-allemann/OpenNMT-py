@@ -532,10 +532,7 @@ class Trainer(object):
             tgt_outer = batch["tgt"]
 
             bptt = False
-            oom = False
             for j in range(0, target_size - 1, trunc_size):
-                oom = False
-
                 # 1. Create truncated target.
 
                 tgt = tgt_outer[:, j : j + trunc_size, :]
@@ -576,7 +573,6 @@ class Trainer(object):
                             self.optim.training_step,
                         )
                         torch.cuda.empty_cache()
-                        oom = True
                         if self.n_gpu > 1 and self.parallel_mode == "tensor_parallel":
                             torch.distributed.destroy_process_group()
                             sys.exit()
@@ -590,11 +586,13 @@ class Trainer(object):
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
-        if self.n_gpu > 1 and self.parallel_mode == "data_parallel" and not oom:
+        if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
             grads = [
                 p.grad.data
+                if p.grad is not None
+                else torch.zeros(p.shape).cuda(device=p.device)
                 for p in self.model.parameters()
-                if p.requires_grad and p.grad is not None
+                if p.requires_grad
             ]
             onmt.utils.distributed.all_reduce_and_rescale_tensors(
                 grads, float(self.n_gpu)
