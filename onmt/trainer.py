@@ -340,7 +340,7 @@ class Trainer(object):
         else:
             task_id = 0
 
-        for i in range(1, train_steps):
+        while self.optim.training_step < train_steps:
             batches, normalization = next(generators[task_id])
 
             # Empirical assertion of dynamic task scheduling
@@ -357,20 +357,23 @@ class Trainer(object):
                     onmt.utils.distributed.all_gather_list(normalization)
                 )
 
-            self._gradient_accumulation(
+            oom_occured = self._gradient_accumulation(
                 batches, normalization, total_stats, report_stats
             )
 
-            if self.average_decay > 0 and i % self.average_every == 0:
+            if oom_occured:  # An OOM error occured, retry with a new batch
+                continue
+
+            if self.average_decay > 0 and step % self.average_every == 0:
                 self._update_average(step)
 
             # Curriculum learning
             if (
                 self.curriculum_learning_enabled
-                and i % self.curriculum_learning_steps == 0
+                and step % self.curriculum_learning_steps == 0
             ):
-                logger.info(f"Step : {i} - Task : {task_id+1}")
-                task_id = scheduler.next_task(i, self.model, self.optim)
+                logger.info(f"Step : {step} - Task : {task_id+1}")
+                task_id = scheduler.next_task(step, self.model, self.optim)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
@@ -576,6 +579,8 @@ class Trainer(object):
                         if self.n_gpu > 1 and self.parallel_mode == "tensor_parallel":
                             torch.distributed.destroy_process_group()
                             sys.exit()
+                        else:
+                            return True
                     else:
                         traceback.print_exc()
                         raise exc
@@ -589,16 +594,15 @@ class Trainer(object):
         if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
             grads = [
                 p.grad.data
-                if p.grad is not None
-                else torch.zeros(p.shape).cuda(device=p.device)
                 for p in self.model.parameters()
-                if p.requires_grad
+                if p.requires_grad and p.grad is not None
             ]
             onmt.utils.distributed.all_reduce_and_rescale_tensors(
                 grads, float(self.n_gpu)
             )
 
         self.optim.step()
+        return False
 
     def _start_report_manager(self, start_time=None):
         """Simple function to start report manager (if any)"""
