@@ -32,8 +32,8 @@ def multi_init(opt, device_id):
         timeout=timedelta(seconds=60),
     )
     gpu_rank = torch.distributed.get_rank()
-    # if not is_master(opt, device_id):
-    #     logger.disabled = True
+    if not is_master(opt, device_id):
+        logger.disabled = True
 
     return gpu_rank
 

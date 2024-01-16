@@ -357,12 +357,9 @@ class Trainer(object):
                     onmt.utils.distributed.all_gather_list(normalization)
                 )
 
-            oom_occured = self._gradient_accumulation(
+            self._gradient_accumulation(
                 batches, normalization, total_stats, report_stats
             )
-
-            if oom_occured:  # An OOM error occured, retry with a new batch
-                continue
 
             if self.average_decay > 0 and step % self.average_every == 0:
                 self._update_average(step)
@@ -579,8 +576,6 @@ class Trainer(object):
                         if self.n_gpu > 1 and self.parallel_mode == "tensor_parallel":
                             torch.distributed.destroy_process_group()
                             sys.exit()
-                        else:
-                            return True
                     else:
                         traceback.print_exc()
                         raise exc
@@ -602,7 +597,6 @@ class Trainer(object):
             )
 
         self.optim.step()
-        return False
 
     def _start_report_manager(self, start_time=None):
         """Simple function to start report manager (if any)"""
