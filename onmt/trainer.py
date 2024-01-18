@@ -343,11 +343,6 @@ class Trainer(object):
         while self.optim.training_step < train_steps:
             batches, normalization = next(generators[task_id])
 
-            # Empirical assertion of dynamic task scheduling
-            # for b in batches:
-            #     for sentence in b["src"]:
-            #         logger.info(f"First subword id of the sentence: {sentence[0][0]}")
-
             step = self.optim.training_step
             # UPDATE DROPOUT
             self._maybe_update_dropout(step)
@@ -587,11 +582,12 @@ class Trainer(object):
         # in case of multi step gradient accumulation,
         # update only after accum batches
         if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
-            grads = [
-                p.grad.data
-                for p in self.model.parameters()
-                if p.requires_grad and p.grad is not None
-            ]
+            grads = []
+            for p in self.model.parameters():
+                if p.requires_grad:
+                    if p.grad is None:
+                        p.grad = torch.zeros(p.shape).cuda(p.device)
+                    grads.append(p.grad.data)
             onmt.utils.distributed.all_reduce_and_rescale_tensors(
                 grads, float(self.n_gpu)
             )
