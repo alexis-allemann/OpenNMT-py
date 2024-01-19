@@ -207,7 +207,12 @@ def main(opt, device_id):
 
     train_iters = []
     if opt.curriculum_learning_enabled:
-        for i in range(opt.curriculum_learning_nb_tasks):
+        tasks_ids = set()
+        for corpus in opt.data.keys():
+            if opt.data[corpus].get("task", None):
+                tasks_ids.add(opt.data[corpus]["task"])
+
+        for i in range(len(tasks_ids)):
             _train_iter = build_dynamic_dataset_iter(
                 opt,
                 transforms_cls,
