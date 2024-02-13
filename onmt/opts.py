@@ -3,6 +3,7 @@ import configargparse
 
 from onmt.modules.sru import CheckSRU
 from onmt.transforms import AVAILABLE_TRANSFORMS
+from onmt.schedulers import AVAILABLE_SCHEDULERS
 from onmt.constants import ModelTask
 from onmt.modules.position_ffn import ACTIVATION_FUNCTIONS
 from onmt.modules.position_ffn import ActivationFunction
@@ -455,6 +456,12 @@ def _add_dynamic_transform_opts(parser):
         transform_cls.add_options(parser)
 
 
+def _add_dynamic_curriculum_opts(parser):
+    """Options related to curriculum learning."""
+    for name, transform_cls in AVAILABLE_SCHEDULERS.items():
+        transform_cls.add_options(parser)
+
+
 def dynamic_prepare_opts(parser, build_vocab_only=False):
     """Options related to data prepare in dynamic mode.
 
@@ -466,6 +473,7 @@ def dynamic_prepare_opts(parser, build_vocab_only=False):
     _add_dynamic_corpus_opts(parser, build_vocab_only=build_vocab_only)
     _add_dynamic_vocab_opts(parser, build_vocab_only=build_vocab_only)
     _add_dynamic_transform_opts(parser)
+    _add_dynamic_curriculum_opts(parser)
 
     if build_vocab_only:
         _add_reproducibility_opts(parser)

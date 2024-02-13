@@ -108,6 +108,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_steps=curriculum_learning_steps,
         curriculum_learning_scheduler=curriculum_learning_scheduler,
         curriculum_learning_starting_task_id=curriculum_learning_starting_task_id,
+        opts=opt
     )
     return trainer
 
@@ -182,6 +183,7 @@ class Trainer(object):
         curriculum_learning_steps=100,
         curriculum_learning_scheduler="alternation",
         curriculum_learning_starting_task_id=1,
+        opts=None
     ):
         # Basic attributes.
 
@@ -218,6 +220,7 @@ class Trainer(object):
             curriculum_learning_scheduler
         )
         self.curriculum_learning_starting_task_id = curriculum_learning_starting_task_id
+        self.opts = opts
 
         for i in range(len(self.accum_count_l)):
             assert self.accum_count_l[i] > 0
@@ -336,7 +339,7 @@ class Trainer(object):
         # Initialize curriculum learning's tasks scheduler
         scheduler = None
         if self.curriculum_learning_enabled:
-            scheduler = self.curriculum_learning_scheduler(len(generators), task_id)
+            scheduler = self.curriculum_learning_scheduler(len(generators), task_id, self.opts)
         else:
             task_id = 0
 
@@ -365,7 +368,7 @@ class Trainer(object):
                 and step % self.curriculum_learning_steps == 0
             ):
                 logger.info(f"Step : {step} - Task : {task_id+1}")
-                task_id = scheduler.next_task(step, self.model, self.optim)
+                task_id = scheduler.next_task(step, self.model, self.optim, total_stats)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
