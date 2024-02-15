@@ -79,6 +79,7 @@ class OnlineBandit(Scheduler):
                 self.Q[self.current_task] = self.current_xent - stats.xent()
                 self.current_task = (self.current_task + 1) % self.nb_tasks
                 self.nb_init_iterations = 0
+                return self.current_task
 
         xent_diff = self.current_xent - stats.xent()
         self.update(self.current_task, xent_diff)
@@ -91,10 +92,11 @@ class OnlineBandit(Scheduler):
         if np.random.rand() < self.epsilon:
             return np.random.choice(self.nb_tasks)
         else:
-            return np.argmax(self.Q)
+            return np.argmax(np.abs(self.Q))
     
     def _boltzmann_exploration(self):
-        return np.random.choice(self.nb_tasks, p=np.exp(self.Q / self.temperature) / np.sum(np.exp(self.Q / self.temperature)))
+        abs_q = np.abs(self.Q)
+        return np.random.choice(self.nb_tasks, p=np.exp(abs_q / self.temperature) / np.sum(np.exp(abs_q / self.temperature)))
     
     def update(self, task_index, reward):
         self.Q[task_index] = self.learning_rate * reward + (1 - self.learning_rate) * self.Q[task_index]
