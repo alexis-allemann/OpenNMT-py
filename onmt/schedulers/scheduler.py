@@ -6,9 +6,9 @@ from onmt.utils.logging import logger
 class Scheduler(object):
     """A Base class that every curriculum scheduler method should derived from."""
 
-    def __init__(self, nb_tasks, starting_task, opts) -> None:
+    def __init__(self, nb_tasks, opts) -> None:
         self.nb_tasks = nb_tasks
-        self.current_task = starting_task
+        self.current_task = 0
         self.opts = opts
         self._parse_opts()
     
@@ -29,6 +29,14 @@ class Scheduler(object):
         To make sure we recover from picked state.
         """
         pass
+
+    def init_task(self, task, reward):
+        """Initialize the task."""
+        pass
+
+    def get_starting_task(self) -> int:
+        """Return the starting task."""
+        pass
     
-    def next_task(self, step, model, optim, stats):
+    def next_task(self, step, reward):
         logger.info(f"Step: {step} - Next task scheduling")

@@ -68,7 +68,6 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_enabled = opt.curriculum_learning_enabled
     curriculum_learning_steps = opt.curriculum_learning_steps
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
-    curriculum_learning_starting_task_id = opt.curriculum_learning_starting_task_id
 
     earlystopper = (
         onmt.utils.EarlyStopping(
@@ -107,7 +106,6 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_enabled=curriculum_learning_enabled,
         curriculum_learning_steps=curriculum_learning_steps,
         curriculum_learning_scheduler=curriculum_learning_scheduler,
-        curriculum_learning_starting_task_id=curriculum_learning_starting_task_id,
         opts=opt
     )
     return trainer
@@ -182,7 +180,6 @@ class Trainer(object):
         curriculum_learning_enabled=False,
         curriculum_learning_steps=100,
         curriculum_learning_scheduler="alternation",
-        curriculum_learning_starting_task_id=1,
         opts=None
     ):
         # Basic attributes.
@@ -219,7 +216,6 @@ class Trainer(object):
         self.curriculum_learning_scheduler = get_scheduler_cls(
             curriculum_learning_scheduler
         )
-        self.curriculum_learning_starting_task_id = curriculum_learning_starting_task_id
         self.opts = opts
 
         for i in range(len(self.accum_count_l)):
@@ -325,8 +321,8 @@ class Trainer(object):
 
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
+        step_stats = onmt.utils.Statistics()
         self._start_report_manager(start_time=total_stats.start_time)
-        task_id = self.curriculum_learning_starting_task_id - 1
 
         # Let's clean the GPUs before training loop
         torch.cuda.empty_cache()
@@ -338,10 +334,26 @@ class Trainer(object):
 
         # Initialize curriculum learning's tasks scheduler
         scheduler = None
+        task_id = 0
         if self.curriculum_learning_enabled:
-            scheduler = self.curriculum_learning_scheduler(len(generators), task_id, self.opts)
-        else:
-            task_id = 0
+            scheduler = self.curriculum_learning_scheduler(len(generators), self.opts)
+            task_id = scheduler.get_starting_task()
+
+        # Train model on each task once without backpropagation to init tasks rewards
+        for i in range(len(generators)):
+            batches, normalization = next(generators[i])
+
+            oom_occured = self._gradient_accumulation(
+                batches, normalization, total_stats, report_stats, step_stats, backward=False
+            )
+
+            scheduler.init_task(i, 0 if step_stats.n_words == 0 else step_stats.loss / step_stats.n_words)
+            step_stats = onmt.utils.Statistics()
+                    
+            logger.info(f"Task {i+1} warmed up")
+        
+        total_stats = onmt.utils.Statistics()
+        report_stats = onmt.utils.Statistics()
 
         while self.optim.training_step < train_steps:
             batches, normalization = next(generators[task_id])
@@ -355,8 +367,8 @@ class Trainer(object):
                     onmt.utils.distributed.all_gather_list(normalization)
                 )
 
-            self._gradient_accumulation(
-                batches, normalization, total_stats, report_stats
+            oom_occured = self._gradient_accumulation(
+                batches, normalization, total_stats, report_stats, step_stats
             )
 
             if self.average_decay > 0 and step % self.average_every == 0:
@@ -368,7 +380,12 @@ class Trainer(object):
                 and step % self.curriculum_learning_steps == 0
             ):
                 logger.info(f"Step : {step} - Task : {task_id+1}")
-                task_id = scheduler.next_task(step, self.model, self.optim, total_stats)
+                if oom_occured:
+                    logger.info("OOM occured, skipping task update")
+                else:
+                    reward = 0 if step_stats.n_words == 0 else step_stats.loss / step_stats.n_words
+                    task_id = scheduler.next_task(step, reward)
+                step_stats = onmt.utils.Statistics()
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
@@ -503,16 +520,16 @@ class Trainer(object):
         return stats
 
     def _gradient_accumulation(
-        self, true_batches, normalization, total_stats, report_stats
+        self, true_batches, normalization, total_stats, report_stats, step_stats, backward=True
     ):
         """Function that iterates over big batches = ``true_batches``
 
         Perform a backward on the loss of each sub_batch and
         finally update the params at the end of the big batch."""
-
         if self.accum_count > 1:
             self.optim.zero_grad(set_to_none=True)
 
+        oom_occurred = False
         for k, batch in enumerate(true_batches):
             target_size = batch["tgt"].size(1)
             # Truncated BPTT: reminder not compatible with accum > 1
@@ -526,6 +543,7 @@ class Trainer(object):
             if src_len is not None:
                 report_stats.n_src_words += src_len.sum().item()
                 total_stats.n_src_words += src_len.sum().item()
+                step_stats.n_src_words += src_len.sum().item()
 
             tgt_outer = batch["tgt"]
 
@@ -556,16 +574,18 @@ class Trainer(object):
                             trunc_start=j,
                             trunc_size=trunc_size,
                         )
-                    if loss is not None:
+                    if loss is not None and backward:
                         loss /= normalization
                         self.optim.backward(loss)
 
                     total_stats.update(batch_stats)
                     report_stats.update(batch_stats)
+                    step_stats.update(batch_stats)
 
                 except Exception as exc:
                     trace_content = traceback.format_exc()
                     if "CUDA out of memory" in trace_content:
+                        oom_occurred = True
                         logger.info(
                             "Step %d, cuda OOM - batch removed",
                             self.optim.training_step,
@@ -584,7 +604,7 @@ class Trainer(object):
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
-        if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
+        if self.n_gpu > 1 and self.parallel_mode == "data_parallel" and backward:
             grads = []
             for p in self.model.parameters():
                 if p.requires_grad:
@@ -595,7 +615,9 @@ class Trainer(object):
                 grads, float(self.n_gpu)
             )
 
-        self.optim.step()
+        if backward:
+            self.optim.step()
+        return oom_occurred
 
     def _start_report_manager(self, start_time=None):
         """Simple function to start report manager (if any)"""

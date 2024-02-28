@@ -7,7 +7,7 @@ from .scheduler import Scheduler
 class Alternation(Scheduler):
     """Tasks alternation scheduling class."""
 
-    def next_task(self, step, model, optim, stats):
-        super().next_task(step, model, optim)
+    def next_task(self, step, reward):
+        super().next_task(step, reward)
         self.current_task = (self.current_task + 1) % self.nb_tasks
         return self.current_task

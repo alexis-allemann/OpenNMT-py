@@ -133,12 +133,6 @@ def _add_logging_opts(parser, is_train=True):
             default=100,
         )
         group.add(
-            "--curriculum_learning_starting_task_id",
-            "-curriculum_learning_starting_task_id",
-            type=int,
-            default=1,
-        )
-        group.add(
             "--curriculum_learning_scheduler",
             "-curriculum_learning_scheduler",
             type=str,
