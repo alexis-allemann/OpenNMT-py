@@ -1,15 +1,15 @@
 import numpy as np
 
 from onmt.schedulers import register_scheduler
-
+from onmt.utils.logging import logger
 from .scheduler import Scheduler
 
 @register_scheduler(scheduler="tscl_online")
 class TSCLOnline(Scheduler):
     """TSCL Online scheduling class."""
 
-    def __init__(self, nb_tasks, opts) -> None:
-        super().__init__(nb_tasks, opts)
+    def __init__(self, nb_tasks, opts, device_id) -> None:
+        super().__init__(nb_tasks, opts, device_id)
         self.Q = np.zeros(nb_tasks)
         self.last_observation_by_task = np.zeros(nb_tasks)
 
@@ -71,7 +71,9 @@ class TSCLOnline(Scheduler):
 
     def get_starting_task(self) -> int:
         """Return the starting task."""
-        return np.argmax(np.abs(self.last_observation_by_task))
+        task_id = np.argmax(np.abs(self.last_observation_by_task))
+        self._log(0)
+        return task_id
 
     def next_task(self, step, new_reward):
         super().next_task(step, new_reward)
@@ -80,12 +82,17 @@ class TSCLOnline(Scheduler):
         self.Q[self.current_task] = self.smoothing * reward + (1 - self.smoothing) * self.Q[self.current_task]
 
         if self.policy == "epsilon_greedy":
-            return self._epsilon_greedy()
+            task_id = self._epsilon_greedy()
         else:
-            return self._boltzmann_exploration()
+            task_id = self._boltzmann_exploration()
+        
+        self.current_task = task_id
+        self._log(step)
+        return task_id
     
     def _epsilon_greedy(self):
         if np.random.rand() < self.epsilon:
+            logger.info(f"E-greedy choice - Random task selection.")
             return np.random.choice(self.nb_tasks)
         else:
             return np.argmax(np.abs(self.Q))
@@ -93,3 +100,12 @@ class TSCLOnline(Scheduler):
     def _boltzmann_exploration(self):
         abs_q = np.abs(self.Q)
         return np.random.choice(self.nb_tasks, p=np.exp(abs_q / self.temperature) / np.sum(np.exp(abs_q / self.temperature)))
+    
+    def _log(self, step):
+        qvalues = "["
+        for i in range(self.nb_tasks):
+            qvalues += f"{self.Q[i]}"
+            if i < self.nb_tasks - 1:
+                qvalues += ", "
+        qvalues += "]"
+        logger.info(f"Step:{step+1};GPU:{self.device_id};Q-values:{qvalues};Task:{self.current_task}")

@@ -6,10 +6,11 @@ from onmt.utils.logging import logger
 class Scheduler(object):
     """A Base class that every curriculum scheduler method should derived from."""
 
-    def __init__(self, nb_tasks, opts) -> None:
+    def __init__(self, nb_tasks, opts, device_id) -> None:
         self.nb_tasks = nb_tasks
         self.current_task = 0
         self.opts = opts
+        self.device_id = device_id
         self._parse_opts()
     
     @classmethod

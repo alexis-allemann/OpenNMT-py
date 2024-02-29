@@ -292,6 +292,7 @@ class Trainer(object):
         self,
         train_iters,
         train_steps,
+        device_id,
         save_checkpoint_steps=5000,
         valid_iter=None,
         valid_steps=10000,
@@ -302,6 +303,7 @@ class Trainer(object):
         Args:
             train_iters: An array of iterators that returns the next training batch per task.
             train_steps: Run training for this many iterations.
+            device_id: The GPU device id to use.
             save_checkpoint_steps: Save a checkpoint every this many
               iterations.
             valid_iter: A generator that returns the next validation batch.
@@ -336,21 +338,25 @@ class Trainer(object):
         scheduler = None
         task_id = 0
         if self.curriculum_learning_enabled:
-            scheduler = self.curriculum_learning_scheduler(len(generators), self.opts)
+            scheduler = self.curriculum_learning_scheduler(len(generators), self.opts, device_id)
             task_id = scheduler.get_starting_task()
 
         # Train model on each task once without backpropagation to init tasks rewards
-        for i in range(len(generators)):
+        i = 0
+        while i < len(generators):
             batches, normalization = next(generators[i])
 
             oom_occured = self._gradient_accumulation(
                 batches, normalization, total_stats, report_stats, step_stats, backward=False
             )
 
-            scheduler.init_task(i, 0 if step_stats.n_words == 0 else step_stats.loss / step_stats.n_words)
-            step_stats = onmt.utils.Statistics()
-                    
-            logger.info(f"Task {i+1} warmed up")
+            if oom_occured:
+                logger.info("OOM occured, skipping task update")
+            else:
+                scheduler.init_task(i, step_stats.xent())
+                step_stats = onmt.utils.Statistics()       
+                logger.info(f"Task {i+1} warmed up")
+                i += 1
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -379,11 +385,10 @@ class Trainer(object):
                 self.curriculum_learning_enabled
                 and step % self.curriculum_learning_steps == 0
             ):
-                logger.info(f"Step : {step} - Task : {task_id+1}")
                 if oom_occured:
                     logger.info("OOM occured, skipping task update")
                 else:
-                    reward = 0 if step_stats.n_words == 0 else step_stats.loss / step_stats.n_words
+                    reward = step_stats.xent()
                     task_id = scheduler.next_task(step, reward)
                 step_stats = onmt.utils.Statistics()
 
@@ -577,6 +582,11 @@ class Trainer(object):
                     if loss is not None and backward:
                         loss /= normalization
                         self.optim.backward(loss)
+
+                    if not backward:
+                        del model_out
+                        del attns
+                        del loss
 
                     total_stats.update(batch_stats)
                     report_stats.update(batch_stats)

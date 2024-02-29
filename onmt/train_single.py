@@ -262,6 +262,7 @@ def main(opt, device_id):
         save_checkpoint_steps=opt.save_checkpoint_steps,
         valid_iter=valid_iter,
         valid_steps=opt.valid_steps,
+        device_id=device_id,
     )
 
     if trainer.report_manager.tensorboard_writer is not None:
