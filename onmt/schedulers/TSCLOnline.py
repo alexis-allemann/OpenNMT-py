@@ -79,6 +79,7 @@ class TSCLOnline(Scheduler):
         super().next_task(step, new_reward)
 
         reward = self.last_observation_by_task[self.current_task] - new_reward
+        self.last_observation_by_task[self.current_task] = new_reward
         self.Q[self.current_task] = self.smoothing * reward + (1 - self.smoothing) * self.Q[self.current_task]
 
         if self.policy == "epsilon_greedy":
