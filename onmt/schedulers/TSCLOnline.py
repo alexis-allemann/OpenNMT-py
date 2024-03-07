@@ -63,6 +63,7 @@ class TSCLOnline(Scheduler):
         self.epsilon = self.opts.e_greedy_epsilon
         self.policy = self.opts.tscl_policy
         self.temperature = self.opts.boltzmann_temperature
+        self.warmup_steps = self.opts.warmup_steps
 
     def init_task(self, task, reward):
         """Initialize the task."""
@@ -71,7 +72,8 @@ class TSCLOnline(Scheduler):
 
     def get_starting_task(self) -> int:
         """Return the starting task."""
-        task_id = np.argmax(np.abs(self.last_observation_by_task))
+        # task_id = np.argmax(np.abs(self.last_observation_by_task))
+        task_id = np.random.choice(self.nb_tasks)
         self._log(0)
         return task_id
 
@@ -83,22 +85,25 @@ class TSCLOnline(Scheduler):
         self.Q[self.current_task] = self.smoothing * reward + (1 - self.smoothing) * self.Q[self.current_task]
 
         if self.policy == "epsilon_greedy":
-            task_id = self._epsilon_greedy()
+            task_id = self._epsilon_greedy(step)
         else:
-            task_id = self._boltzmann_exploration()
+            task_id = self._boltzmann_exploration(step)
         
         self.current_task = task_id
         self._log(step)
         return task_id
     
-    def _epsilon_greedy(self):
-        if np.random.rand() < self.epsilon:
+    def _epsilon_greedy(self, step):
+        if step < self.warmup_steps or np.random.rand() < self.epsilon:
             logger.info(f"E-greedy choice - Random task selection.")
             return np.random.choice(self.nb_tasks)
         else:
             return np.argmax(np.abs(self.Q))
     
-    def _boltzmann_exploration(self):
+    def _boltzmann_exploration(self, step):
+        if step < self.warmup_steps:
+            logger.info(f"Boltzmann exploration - Random task selection.")
+            return np.random.choice(self.nb_tasks)
         abs_q = np.abs(self.Q)
         return np.random.choice(self.nb_tasks, p=np.exp(abs_q / self.temperature) / np.sum(np.exp(abs_q / self.temperature)))
     

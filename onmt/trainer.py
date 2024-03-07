@@ -339,45 +339,46 @@ class Trainer(object):
         task_id = 0
         if self.curriculum_learning_enabled:
             scheduler = self.curriculum_learning_scheduler(len(generators), self.opts, device_id)
-        
-            # Train model on each task once to init tasks rewards
-            i = 0
-            official_model = copy.deepcopy(self.model)
-            official_optim = copy.deepcopy(self.optim)
-            while i < len(generators):
-                self.model = copy.deepcopy(official_model)
-                self.optim = copy.deepcopy(official_optim)
-                self.optim.model = self.model
-                
-                batches, normalization = next(generators[i])
-                oom_occured = self._gradient_accumulation(
-                    batches, normalization, total_stats, report_stats, step_stats
-                )
-
-                step_stats = onmt.utils.Statistics()
-                if oom_occured:
-                    logger.info("OOM occured, skipping task update")
-                else:
-                    batches, normalization = next(generators[task_id])
-                    oom_occured = self._gradient_accumulation(
-                        batches, normalization, total_stats, report_stats, step_stats, backward=False
-                    )
-
-                    if oom_occured:
-                        logger.info("OOM occured, skipping task update")
-                    else:
-                        scheduler.init_task(i, step_stats.xent())
-                        step_stats = onmt.utils.Statistics()
-                        logger.info(f"Task {i+1} warmed up")
-                        i += 1
-
-                del self.model
-                del self.optim
-
             task_id = scheduler.get_starting_task()
+        
+        #     # Train model on each task once to init tasks rewards
+        #     i = 0
+        #     official_model = copy.deepcopy(self.model)
+        #     official_optim = copy.deepcopy(self.optim)
+        #     while i < len(generators):
+        #         self.model = copy.deepcopy(official_model)
+        #         self.optim = copy.deepcopy(official_optim)
+        #         self.optim.model = self.model
+                
+        #         batches, normalization = next(generators[i])
+        #         oom_occured = self._gradient_accumulation(
+        #             batches, normalization, total_stats, report_stats, step_stats
+        #         )
 
-        self.model = official_model
-        self.optim = official_optim
+        #         step_stats = onmt.utils.Statistics()
+        #         if oom_occured:
+        #             logger.info("OOM occured, skipping task update")
+        #         else:
+        #             batches, normalization = next(generators[task_id])
+        #             oom_occured = self._gradient_accumulation(
+        #                 batches, normalization, total_stats, report_stats, step_stats, backward=False
+        #             )
+
+        #             if oom_occured:
+        #                 logger.info("OOM occured, skipping task update")
+        #             else:
+        #                 scheduler.init_task(i, step_stats.xent())
+        #                 step_stats = onmt.utils.Statistics()
+        #                 logger.info(f"Task {i+1} warmed up")
+        #                 i += 1
+
+        #         del self.model
+        #         del self.optim
+
+        #     task_id = scheduler.get_starting_task()
+
+        # self.model = official_model
+        # self.optim = official_optim
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -409,17 +410,11 @@ class Trainer(object):
                 if oom_occured:
                     logger.info("OOM occured, skipping task update")
                 else:
-                    step_stats = onmt.utils.Statistics()
-                    batches, normalization = next(generators[task_id])
-                    oom_occured = self._gradient_accumulation(
-                        batches, normalization, total_stats, report_stats, step_stats, backward=False
-                    )
-                    if oom_occured:
-                        logger.info("OOM occured, skipping task update")
-                    else:
-                        reward = step_stats.xent()
-                        task_id = scheduler.next_task(step, reward)
-                
+                    # step_stats = onmt.utils.Statistics()
+                    batches, _ = next(generators[task_id])
+                    stats = self.compute_reward(batches)
+                    reward = stats.xent()
+                    task_id = scheduler.next_task(step, reward)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
@@ -457,6 +452,33 @@ class Trainer(object):
         if self.model_saver is not None:
             self.model_saver.save(step, moving_average=self.moving_average)
         return total_stats
+    
+    def compute_reward(self, true_batches):
+        # Set model in validating mode.
+        self.model.eval()
+
+        with torch.no_grad():
+            stats = onmt.utils.Statistics()
+            for k, batch in enumerate(true_batches):
+                src = batch["src"]
+                src_len = batch["srclen"]
+                tgt = batch["tgt"]
+
+                with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                    # F-prop through the model.
+                    model_out, attns = self.model(
+                        src, tgt, src_len, with_align=self.with_align
+                    )
+
+                    # Compute loss.
+                    _, batch_stats = self.valid_loss(batch, model_out, attns)
+
+                    stats.update(batch_stats)
+
+        # Set model back to training mode.
+        self.model.train()
+        
+        return stats
 
     def validate(self, valid_iter, moving_average=None):
         """Validate model.
@@ -554,7 +576,7 @@ class Trainer(object):
         return stats
 
     def _gradient_accumulation(
-        self, true_batches, normalization, total_stats, report_stats, step_stats, backward=True
+        self, true_batches, normalization, total_stats, report_stats, step_stats
     ):
         """Function that iterates over big batches = ``true_batches``
 
@@ -608,14 +630,9 @@ class Trainer(object):
                             trunc_start=j,
                             trunc_size=trunc_size,
                         )
-                    if loss is not None and backward:
+                    if loss is not None:
                         loss /= normalization
                         self.optim.backward(loss)
-
-                    if not backward:
-                        del model_out
-                        del attns
-                        del loss
 
                     total_stats.update(batch_stats)
                     report_stats.update(batch_stats)
@@ -643,7 +660,7 @@ class Trainer(object):
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
-        if self.n_gpu > 1 and self.parallel_mode == "data_parallel" and backward:
+        if self.n_gpu > 1 and self.parallel_mode == "data_parallel":
             grads = []
             for p in self.model.parameters():
                 if p.requires_grad:
@@ -654,8 +671,7 @@ class Trainer(object):
                 grads, float(self.n_gpu)
             )
 
-        if backward:
-            self.optim.step()
+        self.optim.step()
         return oom_occurred
 
     def _start_report_manager(self, start_time=None):
