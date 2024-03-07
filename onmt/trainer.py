@@ -8,7 +8,7 @@
           things to users(i.e. how to do it). Also see train.py(one of the
           users of this library) for the strategy things we do.
 """
-
+import copy
 import sys
 import time
 import traceback
@@ -339,24 +339,45 @@ class Trainer(object):
         task_id = 0
         if self.curriculum_learning_enabled:
             scheduler = self.curriculum_learning_scheduler(len(generators), self.opts, device_id)
+        
+            # Train model on each task once to init tasks rewards
+            i = 0
+            official_model = copy.deepcopy(self.model)
+            official_optim = copy.deepcopy(self.optim)
+            while i < len(generators):
+                self.model = copy.deepcopy(official_model)
+                self.optim = copy.deepcopy(official_optim)
+                self.optim.model = self.model
+                
+                batches, normalization = next(generators[i])
+                oom_occured = self._gradient_accumulation(
+                    batches, normalization, total_stats, report_stats, step_stats
+                )
+
+                step_stats = onmt.utils.Statistics()
+                if oom_occured:
+                    logger.info("OOM occured, skipping task update")
+                else:
+                    batches, normalization = next(generators[task_id])
+                    oom_occured = self._gradient_accumulation(
+                        batches, normalization, total_stats, report_stats, step_stats, backward=False
+                    )
+
+                    if oom_occured:
+                        logger.info("OOM occured, skipping task update")
+                    else:
+                        scheduler.init_task(i, step_stats.xent())
+                        step_stats = onmt.utils.Statistics()
+                        logger.info(f"Task {i+1} warmed up")
+                        i += 1
+
+                del self.model
+                del self.optim
+
             task_id = scheduler.get_starting_task()
 
-        # Train model on each task once without backpropagation to init tasks rewards
-        i = 0
-        while i < len(generators):
-            batches, normalization = next(generators[i])
-
-            oom_occured = self._gradient_accumulation(
-                batches, normalization, total_stats, report_stats, step_stats, backward=False
-            )
-
-            if oom_occured:
-                logger.info("OOM occured, skipping task update")
-            else:
-                scheduler.init_task(i, step_stats.xent())
-                step_stats = onmt.utils.Statistics()       
-                logger.info(f"Task {i+1} warmed up")
-                i += 1
+        self.model = official_model
+        self.optim = official_optim
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -388,9 +409,17 @@ class Trainer(object):
                 if oom_occured:
                     logger.info("OOM occured, skipping task update")
                 else:
-                    reward = step_stats.xent()
-                    task_id = scheduler.next_task(step, reward)
-                step_stats = onmt.utils.Statistics()
+                    step_stats = onmt.utils.Statistics()
+                    batches, normalization = next(generators[task_id])
+                    oom_occured = self._gradient_accumulation(
+                        batches, normalization, total_stats, report_stats, step_stats, backward=False
+                    )
+                    if oom_occured:
+                        logger.info("OOM occured, skipping task update")
+                    else:
+                        reward = step_stats.xent()
+                        task_id = scheduler.next_task(step, reward)
+                
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
