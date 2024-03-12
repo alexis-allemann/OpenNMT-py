@@ -68,6 +68,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_enabled = opt.curriculum_learning_enabled
     curriculum_learning_steps = opt.curriculum_learning_steps
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
+    reward_batch_size = opt.reward_batch_size
 
     earlystopper = (
         onmt.utils.EarlyStopping(
@@ -106,6 +107,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_enabled=curriculum_learning_enabled,
         curriculum_learning_steps=curriculum_learning_steps,
         curriculum_learning_scheduler=curriculum_learning_scheduler,
+        reward_batch_size=reward_batch_size,
         opts=opt
     )
     return trainer
@@ -180,6 +182,7 @@ class Trainer(object):
         curriculum_learning_enabled=False,
         curriculum_learning_steps=100,
         curriculum_learning_scheduler="alternation",
+        reward_batch_size=1000,
         opts=None
     ):
         # Basic attributes.
@@ -216,6 +219,7 @@ class Trainer(object):
         self.curriculum_learning_scheduler = get_scheduler_cls(
             curriculum_learning_scheduler
         )
+        self.reward_batch_size = reward_batch_size
         self.opts = opts
 
         for i in range(len(self.accum_count_l)):
@@ -338,47 +342,46 @@ class Trainer(object):
         scheduler = None
         task_id = 0
         if self.curriculum_learning_enabled:
-            scheduler = self.curriculum_learning_scheduler(len(generators), self.opts, device_id)
-            task_id = scheduler.get_starting_task()
+            scheduler = self.curriculum_learning_scheduler(len(generators)-1, self.opts, device_id) # -1 to remove the reward task
         
-        #     # Train model on each task once to init tasks rewards
-        #     i = 0
-        #     official_model = copy.deepcopy(self.model)
-        #     official_optim = copy.deepcopy(self.optim)
-        #     while i < len(generators):
-        #         self.model = copy.deepcopy(official_model)
-        #         self.optim = copy.deepcopy(official_optim)
-        #         self.optim.model = self.model
+            # Train model on each task once to init tasks rewards
+            i = 0
+            official_model = copy.deepcopy(self.model)
+            official_optim = copy.deepcopy(self.optim)
+            while i < len(generators)-1: # -1 to remove the reward task
+                self.model = copy.deepcopy(official_model)
+                self.optim = copy.deepcopy(official_optim)
+                self.optim.model = self.model
                 
-        #         batches, normalization = next(generators[i])
-        #         oom_occured = self._gradient_accumulation(
-        #             batches, normalization, total_stats, report_stats, step_stats
-        #         )
+                batches, normalization = next(generators[i])
+                oom_occured = self._gradient_accumulation(
+                    batches, normalization, total_stats, report_stats, step_stats
+                )
 
-        #         step_stats = onmt.utils.Statistics()
-        #         if oom_occured:
-        #             logger.info("OOM occured, skipping task update")
-        #         else:
-        #             batches, normalization = next(generators[task_id])
-        #             oom_occured = self._gradient_accumulation(
-        #                 batches, normalization, total_stats, report_stats, step_stats, backward=False
-        #             )
+                step_stats = onmt.utils.Statistics()
+                if oom_occured:
+                    logger.info("OOM occured, skipping task update")
+                else:
+                    batches, normalization = next(generators[task_id])
+                    oom_occured = self._gradient_accumulation(
+                        batches, normalization, total_stats, report_stats, step_stats
+                    )
 
-        #             if oom_occured:
-        #                 logger.info("OOM occured, skipping task update")
-        #             else:
-        #                 scheduler.init_task(i, step_stats.xent())
-        #                 step_stats = onmt.utils.Statistics()
-        #                 logger.info(f"Task {i+1} warmed up")
-        #                 i += 1
+                    if oom_occured:
+                        logger.info("OOM occured, skipping task update")
+                    else:
+                        scheduler.init_task(i, step_stats.xent())
+                        step_stats = onmt.utils.Statistics()
+                        logger.info(f"Task {i+1} warmed up")
+                        i += 1
 
-        #         del self.model
-        #         del self.optim
+                del self.model
+                del self.optim
 
-        #     task_id = scheduler.get_starting_task()
+            task_id = scheduler.get_starting_task()
 
-        # self.model = official_model
-        # self.optim = official_optim
+        self.model = official_model
+        self.optim = official_optim
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -411,7 +414,7 @@ class Trainer(object):
                     logger.info("OOM occured, skipping task update")
                 else:
                     # step_stats = onmt.utils.Statistics()
-                    batches, _ = next(generators[task_id])
+                    batches, _ = next(generators[-1])
                     stats = self.compute_reward(batches)
                     reward = stats.xent()
                     task_id = scheduler.next_task(step, reward)
@@ -456,7 +459,6 @@ class Trainer(object):
     def compute_reward(self, true_batches):
         # Set model in validating mode.
         self.model.eval()
-
         with torch.no_grad():
             stats = onmt.utils.Statistics()
             for k, batch in enumerate(true_batches):
@@ -477,7 +479,6 @@ class Trainer(object):
 
         # Set model back to training mode.
         self.model.train()
-        
         return stats
 
     def validate(self, valid_iter, moving_average=None):

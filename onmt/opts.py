@@ -144,6 +144,12 @@ def _add_logging_opts(parser, is_train=True):
             type=int,
             default=1,
         )
+        group.add(
+            "--reward_batch_size",
+            "-reward_batch_size",
+            type=int,
+            default=1000,
+        )
 
     else:
         # Options only during inference

@@ -184,11 +184,12 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
         task_id=0,
         stride=1,
         offset=0,
+        batch_size=None,
     ):
         """Initilize `DynamicDatasetIter` with options parsed from `opt`."""
         corpora_info = {}
         batch_size = (
-            opt.valid_batch_size if (task == CorpusTask.VALID) else opt.batch_size
+            opt.valid_batch_size if (task == CorpusTask.VALID) else batch_size
         )
         if task != CorpusTask.INFER:
             if opt.batch_size_multiple is not None:
@@ -409,6 +410,7 @@ def build_dynamic_dataset_iter(
     tgt=None,
     align=None,
     device_id=-1,
+    batch_size=None,
 ):
     """
     Build `DynamicDatasetIter` from opt.
@@ -446,6 +448,7 @@ def build_dynamic_dataset_iter(
             stride=stride,
             offset=offset,
             device=device,
+            batch_size=batch_size,
         )
         data_iter.num_workers = num_workers
         data_iter._init_datasets(0)  # when workers=0 init_fn not called
@@ -463,6 +466,7 @@ def build_dynamic_dataset_iter(
             stride=stride,
             offset=offset,
             device=torch.device("cpu"),
+            batch_size=batch_size,
         )
         data_iter.num_workers = num_workers
         data_loader = DataLoader(

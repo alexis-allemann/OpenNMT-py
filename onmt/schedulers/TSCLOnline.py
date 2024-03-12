@@ -94,7 +94,8 @@ class TSCLOnline(Scheduler):
         return task_id
     
     def _epsilon_greedy(self, step):
-        if step < self.warmup_steps or np.random.rand() < self.epsilon:
+        # if step < self.warmup_steps or np.random.rand() < self.epsilon:
+        if np.random.rand() < self.epsilon:    
             logger.info(f"E-greedy choice - Random task selection.")
             return np.random.choice(self.nb_tasks)
         else:
