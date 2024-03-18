@@ -145,6 +145,12 @@ def _add_logging_opts(parser, is_train=True):
             default=1,
         )
         group.add(
+            "--curriculum_learning_warmup_steps",
+            "-curriculum_learning_warmup_steps",
+            type=int,
+            default=0,
+        )
+        group.add(
             "--reward_batch_size",
             "-reward_batch_size",
             type=int,

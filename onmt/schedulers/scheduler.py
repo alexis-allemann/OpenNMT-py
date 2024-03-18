@@ -10,6 +10,7 @@ class Scheduler(object):
         self.nb_tasks = nb_tasks
         self.current_task = 0
         self.opts = opts
+        self.warmup_steps = opts.curriculum_learning_warmup_steps
         self.device_id = device_id
         self._parse_opts()
     

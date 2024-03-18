@@ -12,6 +12,7 @@ class TSCLOnline(Scheduler):
         super().__init__(nb_tasks, opts, device_id)
         self.Q = np.zeros(nb_tasks)
         self.last_observation_by_task = np.zeros(nb_tasks)
+        self.unvisited_tasks = list(range(nb_tasks))
 
     @classmethod
     def add_options(cls, parser):
@@ -63,7 +64,6 @@ class TSCLOnline(Scheduler):
         self.epsilon = self.opts.e_greedy_epsilon
         self.policy = self.opts.tscl_policy
         self.temperature = self.opts.boltzmann_temperature
-        self.warmup_steps = self.opts.warmup_steps
 
     def init_task(self, task, reward):
         """Initialize the task."""
@@ -84,27 +84,32 @@ class TSCLOnline(Scheduler):
         self.last_observation_by_task[self.current_task] = new_reward
         self.Q[self.current_task] = self.smoothing * reward + (1 - self.smoothing) * self.Q[self.current_task]
 
-        if self.policy == "epsilon_greedy":
-            task_id = self._epsilon_greedy(step)
+        if len(self.unvisited_tasks) > 0:
+            logger.info(f"Unvisited tasks: {self.unvisited_tasks}")
+            task_id = np.random.choice(self.unvisited_tasks)
+            self.unvisited_tasks.remove(task_id)
         else:
-            task_id = self._boltzmann_exploration(step)
+            if step < self.warmup_steps:
+                logger.info("Warmup step - Random task selection.")
+                task_id = np.random.choice(self.nb_tasks)
+            else:
+                if self.policy == "epsilon_greedy":
+                    task_id = self._epsilon_greedy()
+                else:
+                    task_id = self._boltzmann_exploration()
         
         self.current_task = task_id
         self._log(step)
         return task_id
     
-    def _epsilon_greedy(self, step):
-        # if step < self.warmup_steps or np.random.rand() < self.epsilon:
+    def _epsilon_greedy(self):
         if np.random.rand() < self.epsilon:    
-            logger.info(f"E-greedy choice - Random task selection.")
+            logger.info("E-greedy choice - Random task selection.")
             return np.random.choice(self.nb_tasks)
         else:
             return np.argmax(np.abs(self.Q))
     
-    def _boltzmann_exploration(self, step):
-        if step < self.warmup_steps:
-            logger.info(f"Boltzmann exploration - Random task selection.")
-            return np.random.choice(self.nb_tasks)
+    def _boltzmann_exploration(self):
         abs_q = np.abs(self.Q)
         return np.random.choice(self.nb_tasks, p=np.exp(abs_q / self.temperature) / np.sum(np.exp(abs_q / self.temperature)))
     
