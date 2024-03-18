@@ -191,6 +191,8 @@ class DynamicDatasetIter(torch.utils.data.IterableDataset):
         batch_size = (
             opt.valid_batch_size if (task == CorpusTask.VALID) else batch_size
         )
+        if batch_size is None:
+            batch_size = opt.batch_size
         if task != CorpusTask.INFER:
             if opt.batch_size_multiple is not None:
                 batch_size_multiple = opt.batch_size_multiple
