@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 
+import numpy as np
 import torch
 
 import onmt.utils
@@ -68,6 +69,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_enabled = opt.curriculum_learning_enabled
     curriculum_learning_steps = opt.curriculum_learning_steps
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
+    curriculum_learning_nb_states = opt.curriculum_learning_nb_states
     curriculum_learning_warmup_steps = opt.curriculum_learning_warmup_steps
     reward_batch_size = opt.reward_batch_size
 
@@ -110,6 +112,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_scheduler=curriculum_learning_scheduler,
         curriculum_learning_warmup_steps=curriculum_learning_warmup_steps,
         reward_batch_size=reward_batch_size,
+        curriculum_learning_nb_states=curriculum_learning_nb_states,
         opts=opt
     )
     return trainer
@@ -186,6 +189,7 @@ class Trainer(object):
         curriculum_learning_scheduler="alternation",
         curriculum_learning_warmup_steps=0,
         reward_batch_size=1000,
+        curriculum_learning_nb_states=25,
         opts=None
     ):
         # Basic attributes.
@@ -224,6 +228,7 @@ class Trainer(object):
         )
         self.curriculum_learning_warmup_steps = curriculum_learning_warmup_steps
         self.reward_batch_size = reward_batch_size
+        self.curriculum_learning_nb_states = curriculum_learning_nb_states
         self.opts = opts
 
         for i in range(len(self.accum_count_l)):
@@ -345,47 +350,25 @@ class Trainer(object):
         # Initialize curriculum learning's tasks scheduler
         scheduler = None
         task_id = 0
+        nb_states = 0
+        observation_batch = {}
+        n_obs = self.curriculum_learning_nb_states
         if self.curriculum_learning_enabled:
-            scheduler = self.curriculum_learning_scheduler(len(generators)-1, self.opts, device_id) # -1 to remove the reward task
-        
-            # # Train model on each task once to init tasks rewards
-            # i = 0
-            # official_model = copy.deepcopy(self.model)
-            # official_optim = copy.deepcopy(self.optim)
-            # while i < len(generators)-1: # -1 to remove the reward task
-            #     self.model = copy.deepcopy(official_model)
-            #     self.optim = copy.deepcopy(official_optim)
-            #     self.optim.model = self.model
-                
-            #     batches, normalization = next(generators[i])
-            #     oom_occured = self._gradient_accumulation(
-            #         batches, normalization, total_stats, report_stats, step_stats
-            #     )
-
-            #     step_stats = onmt.utils.Statistics()
-            #     if oom_occured:
-            #         logger.info("OOM occured, skipping task update")
-            #     else:
-            #         batches, normalization = next(generators[task_id])
-            #         oom_occured = self._gradient_accumulation(
-            #             batches, normalization, total_stats, report_stats, step_stats
-            #         )
-
-            #         if oom_occured:
-            #             logger.info("OOM occured, skipping task update")
-            #         else:
-            #             scheduler.init_task(i, step_stats.xent())
-            #             step_stats = onmt.utils.Statistics()
-            #             logger.info(f"Task {i+1} warmed up")
-            #             i += 1
-
-            #     del self.model
-            #     del self.optim
-
-            # task_id = scheduler.get_starting_task()
-
-        # self.model = official_model
-        # self.optim = official_optim
+            batches, normalization = next(generators[-1])
+            observation_batch= {
+                'src': batches[0]['src'][:n_obs],
+                'srclen': batches[0]['srclen'][:n_obs],
+                'tgt': batches[0]['tgt'][:n_obs],
+                'tgtlen': batches[0]['tgtlen'][:n_obs],
+                'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
+                'cid': batches[0]['cid'][:n_obs],
+                'cid_line_number': batches[0]['cid_line_number'][:n_obs],
+            }
+                    
+            nb_states = len(observation_batch["cid"])
+            # TODO : nb_states is not the same as curriculum_learning_nb_states, discover why
+            # Get the log-likelihood by sentence in get_state(). Currently, we only have the log-likelihood of the whole batch or model_out (probabilities by word)
+            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # -1 to remove the reward task
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -421,7 +404,8 @@ class Trainer(object):
                     batches, _ = next(generators[task_id])
                     stats = self.compute_reward(batches)
                     reward = stats.xent()
-                    task_id = scheduler.next_task(step, reward)
+                    state = self.get_state([observation_batch])
+                    task_id = scheduler.next_task(step, reward, state)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
@@ -460,12 +444,32 @@ class Trainer(object):
             self.model_saver.save(step, moving_average=self.moving_average)
         return total_stats
     
+    def get_state(self, true_batches):
+        self.model.eval()
+        with torch.no_grad():
+            for batch in true_batches:
+                src = batch["src"]
+                src_len = batch["srclen"]
+                tgt = batch["tgt"]
+
+                with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                    # F-prop through the model.
+                    model_out, attns = self.model(
+                        src, tgt, src_len, with_align=self.with_align
+                    )
+
+                    # Compute loss.
+                    loss = self.valid_loss(batch, model_out, attns)
+        self.model.train()
+        return loss
+
+    
     def compute_reward(self, true_batches):
         # Set model in validating mode.
         self.model.eval()
         with torch.no_grad():
             stats = onmt.utils.Statistics()
-            for k, batch in enumerate(true_batches):
+            for batch in true_batches:
                 src = batch["src"]
                 src_len = batch["srclen"]
                 tgt = batch["tgt"]

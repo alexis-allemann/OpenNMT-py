@@ -156,6 +156,12 @@ def _add_logging_opts(parser, is_train=True):
             type=int,
             default=1000,
         )
+        group.add(
+            "--curriculum_learning_nb_states",
+            "-curriculum_learning_nb_states",
+            type=int,
+            default=256,
+        )
 
     else:
         # Options only during inference
