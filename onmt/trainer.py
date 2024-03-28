@@ -15,6 +15,7 @@ import traceback
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 import onmt.utils
 from onmt.schedulers import get_scheduler_cls
@@ -351,24 +352,77 @@ class Trainer(object):
         scheduler = None
         task_id = 0
         nb_states = 0
-        observation_batch = {}
-        n_obs = self.curriculum_learning_nb_states
+        observation_batch = []
         if self.curriculum_learning_enabled:
-            batches, normalization = next(generators[-1])
-            observation_batch= {
-                'src': batches[0]['src'][:n_obs],
-                'srclen': batches[0]['srclen'][:n_obs],
-                'tgt': batches[0]['tgt'][:n_obs],
-                'tgtlen': batches[0]['tgtlen'][:n_obs],
-                'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
-                'cid': batches[0]['cid'][:n_obs],
-                'cid_line_number': batches[0]['cid_line_number'][:n_obs],
-            }
-                    
-            nb_states = len(observation_batch["cid"])
-            # TODO : nb_states is not the same as curriculum_learning_nb_states, discover why
-            # Get the log-likelihood by sentence in get_state(). Currently, we only have the log-likelihood of the whole batch or model_out (probabilities by word)
-            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # -1 to remove the reward task
+            # max_src_len = 0
+            # max_tgt_len = 0
+            n_obs = self.curriculum_learning_nb_states
+            while n_obs > 0:
+                batches, normalization = next(generators[-1])
+                for i in range(len(batches[0]['cid'][:n_obs])):
+                    src_tensor = batches[0]['src'][i].clone().detach().reshape(1, batches[0]['src'][i].shape[0], batches[0]['src'][i].shape[1])
+                    tgt_tensor = batches[0]['tgt'][i].clone().detach().reshape(1, batches[0]['tgt'][i].shape[0], batches[0]['tgt'][i].shape[1])
+                    srclen_tensor = torch.tensor([src_tensor.shape[1]], dtype=torch.long, device=batches[0]['srclen'].device)
+                    tgtlen_tensor = torch.tensor([tgt_tensor.shape[1]], dtype=torch.long, device=batches[0]['tgtlen'].device)
+                    observation_batch.append({
+                        'src': src_tensor,
+                        'srclen': srclen_tensor,
+                        'tgt': tgt_tensor,
+                        'tgtlen': tgtlen_tensor,
+                        'ind_in_bucket': [batches[0]['ind_in_bucket'][i]],
+                        'cid': [batches[0]['cid'][i]],
+                        'cid_line_number': [batches[0]['cid_line_number'][i]],
+                    })
+                # if observation_batch is None:
+                #     observation_batch= {
+                #         'src': batches[0]['src'][:n_obs],
+                #         'srclen': batches[0]['srclen'][:n_obs],
+                #         'tgt': batches[0]['tgt'][:n_obs],
+                #         'tgtlen': batches[0]['tgtlen'][:n_obs],
+                #         'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
+                #         'cid': batches[0]['cid'][:n_obs],
+                #         'cid_line_number': batches[0]['cid_line_number'][:n_obs],
+                #     }
+                #     max_src_len = batches[0]['srclen'].max().item()
+                #     max_tgt_len = batches[0]['tgtlen'].max().item()
+                # else:
+                #     new_src_observation_batch = observation_batch["src"]
+                #     new_src_batch = batches[0]['src']
+                #     new_tgt_observation_batch = observation_batch["tgt"]
+                #     new_tgt_batch = batches[0]['tgt']
+                #     if batches[0]['srclen'].max().item() > max_src_len:
+                #         max_src_len = batches[0]['srclen'].max().item()
+                #         temp = torch.ones(new_src_observation_batch.shape[0], max_src_len, new_src_observation_batch.shape[2], dtype=new_src_observation_batch.dtype, device=new_src_observation_batch.device)
+                #         for i, t in enumerate(observation_batch['src']):
+                #             temp[i, :t.shape[0], :t.shape[1]] = t
+                #         new_src_observation_batch = temp
+                #     elif batches[0]['srclen'].max().item() < max_src_len:
+                #         temp = torch.ones(new_src_batch.shape[0], max_src_len, new_src_batch.shape[2], dtype=new_src_batch.dtype, device=new_src_batch.device)
+                #         for i, t in enumerate(batches[0]['src']):
+                #             temp[i, :t.shape[0], :t.shape[1]] = t
+                #         new_src_batch = temp
+                #     if batches[0]['tgtlen'].max().item() > max_tgt_len:
+                #         max_tgt_len = batches[0]['tgtlen'].max().item()
+                #         temp = torch.ones(new_tgt_observation_batch.shape[0], max_tgt_len, new_tgt_observation_batch.shape[2], dtype=new_tgt_observation_batch.dtype, device=new_tgt_observation_batch.device)
+                #         for i, t in enumerate(observation_batch['tgt']):
+                #             temp[i, :t.shape[0], :t.shape[1]] = t
+                #         new_tgt_observation_batch = temp
+                #     elif batches[0]['tgtlen'].max().item() < max_tgt_len:
+                #         temp = torch.ones(new_tgt_batch.shape[0], max_tgt_len, new_tgt_batch.shape[2], dtype=new_tgt_batch.dtype, device=new_tgt_batch.device)
+                #         for i, t in enumerate(batches[0]['tgt']):
+                #             temp[i, :t.shape[0], :t.shape[1]] = t
+                #         new_tgt_batch = temp
+
+                #     observation_batch["src"] = torch.cat((new_src_observation_batch, new_src_batch[:n_obs]), 0)
+                #     observation_batch["srclen"] = torch.cat((observation_batch["srclen"], batches[0]['srclen'][:n_obs]), 0)
+                #     observation_batch["tgt"] = torch.cat((new_tgt_observation_batch, new_tgt_batch[:n_obs]), 0)
+                #     observation_batch["tgtlen"] = torch.cat((observation_batch["tgtlen"], batches[0]['tgtlen'][:n_obs]), 0)
+                #     observation_batch["ind_in_bucket"] = observation_batch["ind_in_bucket"] + batches[0]['ind_in_bucket'][:n_obs]
+                #     observation_batch["cid"] = observation_batch["cid"] + batches[0]['cid'][:n_obs]
+                #     observation_batch["cid_line_number"] = observation_batch["cid_line_number"] + batches[0]['cid_line_number'][:n_obs]
+                n_obs -= len(batches[0]['cid'])
+
+            scheduler = self.curriculum_learning_scheduler(len(generators)-1, self.curriculum_learning_nb_states, self.opts, device_id) # -1 to remove the reward task
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -404,7 +458,7 @@ class Trainer(object):
                     batches, _ = next(generators[task_id])
                     stats = self.compute_reward(batches)
                     reward = stats.xent()
-                    state = self.get_state([observation_batch])
+                    state = self.get_state(observation_batch)
                     task_id = scheduler.next_task(step, reward, state)
 
             report_stats = self._maybe_report_training(
@@ -446,6 +500,7 @@ class Trainer(object):
     
     def get_state(self, true_batches):
         self.model.eval()
+        losses = []
         with torch.no_grad():
             for batch in true_batches:
                 src = batch["src"]
@@ -459,9 +514,11 @@ class Trainer(object):
                     )
 
                     # Compute loss.
-                    loss = self.valid_loss(batch, model_out, attns)
+                    loss, _ = self.valid_loss(batch, model_out, attns)
+                    losses.append(loss.item())
+                        
         self.model.train()
-        return loss
+        return torch.tensor(losses, device=src.device)
 
     
     def compute_reward(self, true_batches):
