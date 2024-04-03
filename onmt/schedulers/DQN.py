@@ -51,9 +51,9 @@ class DQNScheduler(Scheduler):
 
     def __init__(self, nb_actions, nb_states, opts, device_id) -> None:
         super().__init__(nb_actions, nb_states, opts, device_id)
-        self.action = 0
         self.lastRewardsByTask = np.zeros(nb_actions)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.action = torch.zeros(1, dtype=torch.int, device=self.device)
         default_state = np.zeros(nb_states)
         self.last_state = torch.tensor(default_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         self.policy_net = DQN(nb_states, nb_actions).to(self.device)
@@ -61,6 +61,7 @@ class DQNScheduler(Scheduler):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
         self.memory = ReplayMemory(self.MAX_REPLAY_CAPACITY)
+        self.exploration = True
 
     @classmethod
     def add_options(cls, parser):
@@ -70,7 +71,7 @@ class DQNScheduler(Scheduler):
         group.add_argument(
             "-dqn_batch_size",
             "--dqn_batch_size",
-            type=float,
+            type=int,
             default=128,
             help="Batch size for the DQN algorithm.",
         )
@@ -94,13 +95,6 @@ class DQNScheduler(Scheduler):
             type=int,
             default=10000,
             help="Maximum replay capacity for the DQN algorithm.",
-        )
-        group.add_argument(
-            "-dqn_warmup",
-            "--dqn_warmup",
-            type=int,
-            default=16000,
-            help="Warmup steps for the DQN algorithm.",
         )
         group.add_argument(
             "-dqn_eps_start",
@@ -148,7 +142,6 @@ class DQNScheduler(Scheduler):
         self.TAU = self.opts.dqn_tau
         self.MIN_REPLAY_CAPACITY = self.opts.dqn_min_replay_capacity
         self.MAX_REPLAY_CAPACITY = self.opts.dqn_max_replay_capacity
-        self.WARMUP = self.opts.dqn_warmup
         self.EPS_START = self.opts.dqn_eps_start
         self.EPS_END = self.opts.dqn_eps_end
         self.EPS_DECAY = self.opts.dqn_eps_decay
@@ -156,21 +149,23 @@ class DQNScheduler(Scheduler):
         self.LR = self.opts.dqn_lr
 
     def select_action(self, step, state):
-        if step < self.WARMUP:
-            return random.randint(0, self.nb_actions-1)
+        if step < self.warmup_steps:
+            return torch.tensor([random.randint(0, self.nb_actions-1)], dtype=torch.int, device=self.device)
         
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
-            math.exp(-1. * steps_done / self.EPS_DECAY)
-        steps_done += 1
+            math.exp(-1. * step / self.EPS_DECAY)
         if sample > eps_threshold:
+            self.exploration = False
             with torch.no_grad():
                 # t.max(1) will return the largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                return self.policy_net(state).max(1).indices.view(1, 1).item()
+                # return self.policy_net(state).max(1).indices.view(1, 1).item()
+                return self.policy_net(state).argmax()
         else:
-            return random.randint(0, self.nb_actions-1)
+            self.exploration = True
+            return torch.tensor([random.randint(0, self.nb_actions-1)], dtype=torch.int, device=self.device)
         
     def optimize_model(self):
         if len(self.memory) < self.BATCH_SIZE or len(self.memory) < self.MIN_REPLAY_CAPACITY:
@@ -225,9 +220,9 @@ class DQNScheduler(Scheduler):
         self.lastRewardsByTask[self.current_task] = reward
         delta_reward = torch.tensor([delta_reward], device=self.device)
 
-        next_state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        next_state = state.clone().detach().unsqueeze(0)
 
-        if step >= self.WARMUP:
+        if step >= self.warmup_steps:
             # Store the transition in memory
             self.memory.push(self.last_state, self.action, next_state, delta_reward)
 
@@ -247,13 +242,7 @@ class DQNScheduler(Scheduler):
 
         self.action = self.select_action(step, state)
         self._log(step)
-        return self.action
+        return self.action.item()
     
     def _log(self, step):
-        # qvalues = "["
-        # for i in range(self.nb_actions):
-        #     qvalues += f"{self.Q[i]}"
-        #     if i < self.nb_actions - 1:
-        #         qvalues += ", "
-        # qvalues += "]"
-        logger.info(f"Step:{step+1};GPU:{self.device_id};Task:{self.action}")
+        logger.info(f"Step:{step+1};GPU:{self.device_id};Task:{self.action.item()};Exploration:{self.exploration}")

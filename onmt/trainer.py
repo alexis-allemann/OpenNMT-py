@@ -352,27 +352,43 @@ class Trainer(object):
         scheduler = None
         task_id = 0
         nb_states = 0
+        n_obs = 10
         observation_batch = []
+        i = 0
         if self.curriculum_learning_enabled:
+            while nb_states < self.curriculum_learning_nb_states:
+                batches, _ = next(generators[i])
+                new_batch = {
+                    'src': batches[0]['src'][:n_obs],
+                    'srclen': batches[0]['srclen'][:n_obs],
+                    'tgt': batches[0]['tgt'][:n_obs],
+                    'tgtlen': batches[0]['tgtlen'][:n_obs],
+                    'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
+                    'cid': batches[0]['cid'][:n_obs],
+                    'cid_line_number': batches[0]['cid_line_number'][:n_obs],
+                }
+                observation_batch.append(new_batch)
+                nb_states += 1
+                i = (i + 1) % (len(generators) - 1)
             # max_src_len = 0
             # max_tgt_len = 0
-            n_obs = self.curriculum_learning_nb_states
-            while n_obs > 0:
-                batches, normalization = next(generators[-1])
-                for i in range(len(batches[0]['cid'][:n_obs])):
-                    src_tensor = batches[0]['src'][i].clone().detach().reshape(1, batches[0]['src'][i].shape[0], batches[0]['src'][i].shape[1])
-                    tgt_tensor = batches[0]['tgt'][i].clone().detach().reshape(1, batches[0]['tgt'][i].shape[0], batches[0]['tgt'][i].shape[1])
-                    srclen_tensor = torch.tensor([src_tensor.shape[1]], dtype=torch.long, device=batches[0]['srclen'].device)
-                    tgtlen_tensor = torch.tensor([tgt_tensor.shape[1]], dtype=torch.long, device=batches[0]['tgtlen'].device)
-                    observation_batch.append({
-                        'src': src_tensor,
-                        'srclen': srclen_tensor,
-                        'tgt': tgt_tensor,
-                        'tgtlen': tgtlen_tensor,
-                        'ind_in_bucket': [batches[0]['ind_in_bucket'][i]],
-                        'cid': [batches[0]['cid'][i]],
-                        'cid_line_number': [batches[0]['cid_line_number'][i]],
-                    })
+            # n_obs = self.curriculum_learning_nb_states
+            # while n_obs > 0:
+            #     batches, normalization = next(generators[-1])
+                # for i in range(len(batches[0]['cid'][:n_obs])):
+                #     src_tensor = batches[0]['src'][i].clone().detach().reshape(1, batches[0]['src'][i].shape[0], batches[0]['src'][i].shape[1])
+                #     tgt_tensor = batches[0]['tgt'][i].clone().detach().reshape(1, batches[0]['tgt'][i].shape[0], batches[0]['tgt'][i].shape[1])
+                #     srclen_tensor = torch.tensor([src_tensor.shape[1]], dtype=torch.long, device=batches[0]['srclen'].device)
+                #     tgtlen_tensor = torch.tensor([tgt_tensor.shape[1]], dtype=torch.long, device=batches[0]['tgtlen'].device)
+                #     observation_batch.append({
+                #         'src': src_tensor,
+                #         'srclen': srclen_tensor,
+                #         'tgt': tgt_tensor,
+                #         'tgtlen': tgtlen_tensor,
+                #         'ind_in_bucket': [batches[0]['ind_in_bucket'][i]],
+                #         'cid': [batches[0]['cid'][i]],
+                #         'cid_line_number': [batches[0]['cid_line_number'][i]],
+                #     })
                 # if observation_batch is None:
                 #     observation_batch= {
                 #         'src': batches[0]['src'][:n_obs],
@@ -420,9 +436,9 @@ class Trainer(object):
                 #     observation_batch["ind_in_bucket"] = observation_batch["ind_in_bucket"] + batches[0]['ind_in_bucket'][:n_obs]
                 #     observation_batch["cid"] = observation_batch["cid"] + batches[0]['cid'][:n_obs]
                 #     observation_batch["cid_line_number"] = observation_batch["cid_line_number"] + batches[0]['cid_line_number'][:n_obs]
-                n_obs -= len(batches[0]['cid'])
+                # n_obs -= len(batches[0]['cid'])
 
-            scheduler = self.curriculum_learning_scheduler(len(generators)-1, self.curriculum_learning_nb_states, self.opts, device_id) # -1 to remove the reward task
+            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # -1 to remove the reward task
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -498,11 +514,12 @@ class Trainer(object):
             self.model_saver.save(step, moving_average=self.moving_average)
         return total_stats
     
-    def get_state(self, true_batches):
+    def get_state(self, observation_batches):
+        start_time = time.time()
         self.model.eval()
         losses = []
         with torch.no_grad():
-            for batch in true_batches:
+            for batch in observation_batches:
                 src = batch["src"]
                 src_len = batch["srclen"]
                 tgt = batch["tgt"]
@@ -516,8 +533,15 @@ class Trainer(object):
                     # Compute loss.
                     loss, _ = self.valid_loss(batch, model_out, attns)
                     losses.append(loss.item())
-                        
+     
         self.model.train()
+        logger.info(
+            """state calculation
+                       took: {} s.""".format(
+                time.time() - start_time
+            )
+        )
+        logger.info("losses: {}".format(losses))
         return torch.tensor(losses, device=src.device)
 
     
