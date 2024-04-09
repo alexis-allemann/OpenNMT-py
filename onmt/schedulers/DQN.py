@@ -149,9 +149,6 @@ class DQNScheduler(Scheduler):
         self.LR = self.opts.dqn_lr
 
     def select_action(self, step, state):
-        if step < self.warmup_steps:
-            return torch.tensor([random.randint(0, self.nb_actions-1)], dtype=torch.int, device=self.device)
-        
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * \
             math.exp(-1. * step / self.EPS_DECAY)
@@ -161,11 +158,10 @@ class DQNScheduler(Scheduler):
                 # t.max(1) will return the largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                # return self.policy_net(state).max(1).indices.view(1, 1).item()
-                return self.policy_net(state).argmax()
+                return self.policy_net(state).max(1).indices.view(1, 1)
         else:
             self.exploration = True
-            return torch.tensor([random.randint(0, self.nb_actions-1)], dtype=torch.int, device=self.device)
+            return torch.tensor([[random.randint(0, self.nb_actions-1)]], device=self.device, dtype=torch.long)
         
     def optimize_model(self):
         if len(self.memory) < self.BATCH_SIZE or len(self.memory) < self.MIN_REPLAY_CAPACITY:
@@ -220,9 +216,9 @@ class DQNScheduler(Scheduler):
         self.lastRewardsByTask[self.current_task] = reward
         delta_reward = torch.tensor([delta_reward], device=self.device)
 
-        next_state = state.clone().detach().unsqueeze(0)
-
         if step >= self.warmup_steps:
+            next_state = state.clone().detach().unsqueeze(0)
+
             # Store the transition in memory
             self.memory.push(self.last_state, self.action, next_state, delta_reward)
 
@@ -240,7 +236,9 @@ class DQNScheduler(Scheduler):
                 target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
             self.target_net.load_state_dict(target_net_state_dict)
 
-        self.action = self.select_action(step, state)
+            self.action = self.select_action(step, next_state)
+        else:
+            self.action = torch.tensor([[random.randint(0, self.nb_actions-1)]], device=self.device, dtype=torch.long)
         self._log(step)
         return self.action.item()
     

@@ -471,10 +471,13 @@ class Trainer(object):
                     logger.info("OOM occured, skipping task update")
                 else:
                     # step_stats = onmt.utils.Statistics()
-                    batches, _ = next(generators[task_id])
+                    # batches, _ = next(generators[task_id])
+                    batches, _ = next(generators[-1])
                     stats = self.compute_reward(batches)
                     reward = stats.xent()
-                    state = self.get_state(observation_batch)
+                    state = None
+                    if step >= self.curriculum_learning_warmup_steps:
+                        state = self.get_state(observation_batch)
                     task_id = scheduler.next_task(step, reward, state)
 
             report_stats = self._maybe_report_training(
