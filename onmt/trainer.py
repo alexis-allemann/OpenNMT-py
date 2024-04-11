@@ -538,12 +538,6 @@ class Trainer(object):
                     losses.append(loss.item())
      
         self.model.train()
-        logger.info(
-            """state calculation
-                       took: {} s.""".format(
-                time.time() - start_time
-            )
-        )
         logger.info("losses: {}".format(losses))
         return torch.tensor(losses, device=src.device)
 

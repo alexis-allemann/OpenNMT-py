@@ -36,13 +36,13 @@ class DQN(nn.Module):
 
     def __init__(self, n_observations, n_actions):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 512)
-        self.layer2 = nn.Linear(512, 512)
-        self.layer3 = nn.Linear(512, n_actions)
+        self.layer1 = nn.Linear(n_observations, 128)
+        self.layer2 = nn.Linear(128, 128)
+        self.layer3 = nn.Linear(128, n_actions)
 
     def forward(self, x):
-        x = F.tanh(self.layer1(x))
-        x = F.tanh(self.layer2(x))
+        x = F.relu(self.layer1(x))
+        x = F.relu(self.layer2(x))
         return self.layer3(x)
 
 @register_scheduler(scheduler="dqn")
@@ -51,7 +51,7 @@ class DQNScheduler(Scheduler):
 
     def __init__(self, nb_actions, nb_states, opts, device_id) -> None:
         super().__init__(nb_actions, nb_states, opts, device_id)
-        self.lastRewardsByTask = np.zeros(nb_actions)
+        self.lastReward = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action = torch.zeros(1, dtype=torch.int, device=self.device)
         default_state = np.zeros(nb_states)
@@ -62,6 +62,7 @@ class DQNScheduler(Scheduler):
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
         self.memory = ReplayMemory(self.MAX_REPLAY_CAPACITY)
         self.exploration = True
+        self.Q = None
 
     @classmethod
     def add_options(cls, parser):
@@ -158,9 +159,12 @@ class DQNScheduler(Scheduler):
                 # t.max(1) will return the largest column value of each row.
                 # second column on max result is index of where max element was
                 # found, so we pick action with the larger expected reward.
-                return self.policy_net(state).max(1).indices.view(1, 1)
+                predictions = self.policy_net(state)
+                self.Q = predictions.squeeze(0)
+                return predictions.max(1).indices.view(1, 1)
         else:
             self.exploration = True
+            self.Q = None
             return torch.tensor([[random.randint(0, self.nb_actions-1)]], device=self.device, dtype=torch.long)
         
     def optimize_model(self):
@@ -212,9 +216,9 @@ class DQNScheduler(Scheduler):
     def next_task(self, step, reward, state):
         super().next_task(step, reward, state)
 
-        delta_reward = self.lastRewardsByTask[self.action] - reward
-        self.lastRewardsByTask[self.current_task] = reward
-        delta_reward = torch.tensor([delta_reward], device=self.device)
+        self.delta_reward = self.lastReward - reward
+        self.lastReward = reward
+        delta_reward = torch.tensor([self.delta_reward], device=self.device)
 
         if step >= self.warmup_steps:
             next_state = state.clone().detach().unsqueeze(0)
@@ -238,9 +242,18 @@ class DQNScheduler(Scheduler):
 
             self.action = self.select_action(step, next_state)
         else:
-            self.action = torch.tensor([[random.randint(0, self.nb_actions-1)]], device=self.device, dtype=torch.long)
+            hrl_actions = [1,3,5,7]
+            self.action = torch.tensor([[np.random.choice(hrl_actions)]], device=self.device, dtype=torch.long)
         self._log(step)
         return self.action.item()
     
     def _log(self, step):
-        logger.info(f"Step:{step+1};GPU:{self.device_id};Task:{self.action.item()};Exploration:{self.exploration}")
+        qvalues = "None"
+        if self.Q is not None:
+            qvalues = "["
+            for i in range(self.nb_actions):
+                qvalues += f"{self.Q[i]}"
+                if i < self.nb_actions - 1:
+                    qvalues += ", "
+            qvalues += "]"
+        logger.info(f"Step:{step+1};GPU:{self.device_id};Q-values:{qvalues};Action:{self.action.item()};Delta-reward:{self.delta_reward};Exploration:{self.exploration}")
