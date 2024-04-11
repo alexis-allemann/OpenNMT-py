@@ -13,7 +13,11 @@ class AlternationProportional(Scheduler):
 
     def next_task(self, step, reward):
         super().next_task(step, reward)
-        self.current_task = np.random.choice(self.actions, p=self.tasks_prob)
+        if self.warmup_steps > step:
+            self.current_task = np.random.choice(self.actions, p=self.tasks_prob)
+        else:
+            hrl_actions = [1,3,5,7]
+            self.current_task = np.random.choice(hrl_actions)
         self._log(step)
         return self.current_task
 
