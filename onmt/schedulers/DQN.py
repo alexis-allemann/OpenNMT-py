@@ -1,7 +1,9 @@
 
 import numpy as np
+import torch.distributed
 from onmt.schedulers import register_scheduler
 from onmt.utils.logging import logger
+from onmt.utils.distributed_new import all_gather_list
 from .scheduler import Scheduler
 
 import math
@@ -41,8 +43,8 @@ class DQN(nn.Module):
         self.layer3 = nn.Linear(128, n_actions)
 
     def forward(self, x):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
+        x = F.tanh(self.layer1(x))
+        x = F.tanh(self.layer2(x))
         return self.layer3(x)
 
 @register_scheduler(scheduler="dqn")
@@ -59,7 +61,8 @@ class DQNScheduler(Scheduler):
         self.policy_net = DQN(nb_states, nb_actions).to(self.device)
         self.target_net = DQN(nb_states, nb_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
+        # self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
+        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=self.LR)
         self.memory = ReplayMemory(self.MAX_REPLAY_CAPACITY)
         self.exploration = True
         self.Q = None
@@ -216,35 +219,39 @@ class DQNScheduler(Scheduler):
     def next_task(self, step, reward, state):
         super().next_task(step, reward, state)
 
-        self.delta_reward = self.lastReward - reward
-        self.lastReward = reward
-        delta_reward = torch.tensor([self.delta_reward], device=self.device)
+        if self.device_id == 0:
+            self.delta_reward = self.lastReward - reward
+            self.lastReward = reward
+            delta_reward = torch.tensor([self.delta_reward], device=self.device)
 
-        if step >= self.warmup_steps:
-            next_state = state.clone().detach().unsqueeze(0)
+            if step >= self.warmup_steps:
+                next_state = state.clone().detach().unsqueeze(0)
 
-            # Store the transition in memory
-            self.memory.push(self.last_state, self.action, next_state, delta_reward)
+                # Store the transition in memory
+                self.memory.push(self.last_state, self.action, next_state, delta_reward)
 
-            # Move to the next state
-            self.last_state = next_state
+                # Move to the next state
+                self.last_state = next_state
 
-            # Perform one step of the optimization (on the policy network)
-            self.optimize_model()
+                # Perform one step of the optimization (on the policy network)
+                self.optimize_model()
 
-            # Soft update of the target network's weights
-            # θ′ ← τ θ + (1 −τ )θ′
-            target_net_state_dict = self.target_net.state_dict()
-            policy_net_state_dict = self.policy_net.state_dict()
-            for key in policy_net_state_dict:
-                target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
-            self.target_net.load_state_dict(target_net_state_dict)
+                # Soft update of the target network's weights
+                # θ′ ← τ θ + (1 −τ )θ′
+                target_net_state_dict = self.target_net.state_dict()
+                policy_net_state_dict = self.policy_net.state_dict()
+                for key in policy_net_state_dict:
+                    target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
+                self.target_net.load_state_dict(target_net_state_dict)
 
-            self.action = self.select_action(step, next_state)
-        else:
-            hrl_actions = [1,3,5,7]
-            self.action = torch.tensor([[np.random.choice(hrl_actions)]], device=self.device, dtype=torch.long)
-        self._log(step)
+                self.action = self.select_action(step, next_state)
+            else:
+                hrl_actions = [1,3,5,7]
+                self.action = torch.tensor([[np.random.choice(hrl_actions)]], device=self.device, dtype=torch.long)
+            self._log(step)
+        
+        actions = all_gather_list(self.action) # Gather the actions from all GPUs
+        self.action = actions[0] # Select the action from the first GPU
         return self.action.item()
     
     def _log(self, step):

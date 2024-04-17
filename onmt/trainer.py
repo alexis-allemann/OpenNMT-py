@@ -539,6 +539,7 @@ class Trainer(object):
      
         self.model.train()
         logger.info("losses: {}".format(losses))
+        logger.info("state computation took: {} s.".format(time.time() - start_time))
         return torch.tensor(losses, device=src.device)
 
     
