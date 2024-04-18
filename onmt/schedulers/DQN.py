@@ -55,7 +55,7 @@ class DQNScheduler(Scheduler):
         super().__init__(nb_actions, nb_states, opts, device_id)
         self.lastReward = 0
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.action = torch.zeros(1, dtype=torch.int, device=self.device)
+        self.action = torch.zeros((1,1), dtype=torch.int, device=self.device)
         default_state = np.zeros(nb_states)
         self.last_state = torch.tensor(default_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         self.policy_net = DQN(nb_states, nb_actions).to(self.device)
@@ -251,7 +251,7 @@ class DQNScheduler(Scheduler):
             self._log(step)
         
         actions = all_gather_list(self.action) # Gather the actions from all GPUs
-        self.action = actions[0] # Select the action from the first GPU
+        self.action = actions[0].view(1,1) # Select the action from the first GPU
         return self.action.item()
     
     def _log(self, step):
