@@ -36,11 +36,11 @@ class ReplayMemory(object):
     
 class DQN(nn.Module):
 
-    def __init__(self, n_observations, n_actions):
+    def __init__(self, n_observations, n_actions, hidden_size):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
-        self.layer3 = nn.Linear(128, n_actions)
+        self.layer1 = nn.Linear(n_observations, hidden_size)
+        self.layer2 = nn.Linear(hidden_size, hidden_size)
+        self.layer3 = nn.Linear(hidden_size, n_actions)
 
     def forward(self, x):
         x = F.tanh(self.layer1(x))
@@ -58,14 +58,13 @@ class DQNScheduler(Scheduler):
         self.action = torch.zeros((1,1), dtype=torch.int, device=self.device)
         default_state = np.zeros(nb_states)
         self.last_state = torch.tensor(default_state, dtype=torch.float32, device=self.device).unsqueeze(0)
-        self.policy_net = DQN(nb_states, nb_actions).to(self.device)
-        self.target_net = DQN(nb_states, nb_actions).to(self.device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-        # self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.LR, amsgrad=True)
-        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=self.LR)
         self.memory = ReplayMemory(self.MAX_REPLAY_CAPACITY)
         self.exploration = True
         self.Q = None
+        self.policy_net = DQN(self.nb_states, self.nb_actions, self.HIDDEN_SIZE).to(self.device)
+        self.target_net = DQN(self.nb_states, self.nb_actions, self.HIDDEN_SIZE).to(self.device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=self.LR)
 
     @classmethod
     def add_options(cls, parser):
@@ -135,6 +134,13 @@ class DQNScheduler(Scheduler):
             default=0.00025,
             help="Learning rate for the DQN algorithm.",
         )
+        group.add_argument(
+            "-dqn_hidden_size",
+            "--dqn_hidden_size",
+            type=int,
+            default=512,
+            help="Hidden size for the DQN algorithm.",
+        )
 
     @classmethod
     def _validate_options(cls, opts):
@@ -151,6 +157,7 @@ class DQNScheduler(Scheduler):
         self.EPS_DECAY = self.opts.dqn_eps_decay
         self.GAMMA = self.opts.dqn_gamma
         self.LR = self.opts.dqn_lr
+        self.HIDDEN_SIZE = self.opts.dqn_hidden_size
 
     def select_action(self, step, state):
         sample = random.random()
@@ -225,28 +232,30 @@ class DQNScheduler(Scheduler):
             delta_reward = torch.tensor([self.delta_reward], device=self.device)
 
             if step >= self.warmup_steps:
-                next_state = state.clone().detach().unsqueeze(0)
+                if len(self.memory) >= self.MIN_REPLAY_CAPACITY:
+                    next_state = state.clone().detach().unsqueeze(0)
 
-                # Store the transition in memory
-                self.memory.push(self.last_state, self.action, next_state, delta_reward)
+                    # Store the transition in memory
+                    self.memory.push(self.last_state, self.action, next_state, delta_reward)
 
-                # Move to the next state
-                self.last_state = next_state
+                    # Move to the next state
+                    self.last_state = next_state
 
-                # Perform one step of the optimization (on the policy network)
-                self.optimize_model()
+                    # Perform one step of the optimization (on the policy network)
+                    self.optimize_model()
 
-                # Soft update of the target network's weights
-                # θ′ ← τ θ + (1 −τ )θ′
-                target_net_state_dict = self.target_net.state_dict()
-                policy_net_state_dict = self.policy_net.state_dict()
-                for key in policy_net_state_dict:
-                    target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
-                self.target_net.load_state_dict(target_net_state_dict)
-
-                self.action = self.select_action(step, next_state)
+                    # Soft update of the target network's weights
+                    # θ′ ← τ θ + (1 −τ )θ′
+                    target_net_state_dict = self.target_net.state_dict()
+                    policy_net_state_dict = self.policy_net.state_dict()
+                    for key in policy_net_state_dict:
+                        target_net_state_dict[key] = policy_net_state_dict[key]*self.TAU + target_net_state_dict[key]*(1-self.TAU)
+                    self.target_net.load_state_dict(target_net_state_dict)
+                    self.action = self.select_action(step, next_state)
+                else:
+                    self.action = torch.tensor([[np.random.choice(self.nb_actions)]], device=self.device, dtype=torch.long)
             else:
-                hrl_actions = [1,3,5,7]
+                hrl_actions = [1,3,5,7] # TODO: Hardcoded for now but should be passed as an argument
                 self.action = torch.tensor([[np.random.choice(hrl_actions)]], device=self.device, dtype=torch.long)
             self._log(step)
         
@@ -264,3 +273,7 @@ class DQNScheduler(Scheduler):
                     qvalues += ", "
             qvalues += "]"
         logger.info(f"Step:{step+1};GPU:{self.device_id};Q-values:{qvalues};Action:{self.action.item()};Delta-reward:{self.delta_reward};Exploration:{self.exploration}")
+
+    def save_scheduler(self, path):
+        torch.save(self.policy_net.state_dict(), path)
+        logger.info(f"Model saved to {path}")

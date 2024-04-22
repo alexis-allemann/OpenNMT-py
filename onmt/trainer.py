@@ -354,6 +354,7 @@ class Trainer(object):
         nb_states = 0
         n_obs = 10
         observation_batch = []
+        reward_batch = None
         i = 0
         if self.curriculum_learning_enabled:
             while nb_states < self.curriculum_learning_nb_states:
@@ -369,76 +370,9 @@ class Trainer(object):
                 }
                 observation_batch.append(new_batch)
                 nb_states += 1
-                i = (i + 1) % (len(generators) - 1)
-            # max_src_len = 0
-            # max_tgt_len = 0
-            # n_obs = self.curriculum_learning_nb_states
-            # while n_obs > 0:
-            #     batches, normalization = next(generators[-1])
-                # for i in range(len(batches[0]['cid'][:n_obs])):
-                #     src_tensor = batches[0]['src'][i].clone().detach().reshape(1, batches[0]['src'][i].shape[0], batches[0]['src'][i].shape[1])
-                #     tgt_tensor = batches[0]['tgt'][i].clone().detach().reshape(1, batches[0]['tgt'][i].shape[0], batches[0]['tgt'][i].shape[1])
-                #     srclen_tensor = torch.tensor([src_tensor.shape[1]], dtype=torch.long, device=batches[0]['srclen'].device)
-                #     tgtlen_tensor = torch.tensor([tgt_tensor.shape[1]], dtype=torch.long, device=batches[0]['tgtlen'].device)
-                #     observation_batch.append({
-                #         'src': src_tensor,
-                #         'srclen': srclen_tensor,
-                #         'tgt': tgt_tensor,
-                #         'tgtlen': tgtlen_tensor,
-                #         'ind_in_bucket': [batches[0]['ind_in_bucket'][i]],
-                #         'cid': [batches[0]['cid'][i]],
-                #         'cid_line_number': [batches[0]['cid_line_number'][i]],
-                #     })
-                # if observation_batch is None:
-                #     observation_batch= {
-                #         'src': batches[0]['src'][:n_obs],
-                #         'srclen': batches[0]['srclen'][:n_obs],
-                #         'tgt': batches[0]['tgt'][:n_obs],
-                #         'tgtlen': batches[0]['tgtlen'][:n_obs],
-                #         'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
-                #         'cid': batches[0]['cid'][:n_obs],
-                #         'cid_line_number': batches[0]['cid_line_number'][:n_obs],
-                #     }
-                #     max_src_len = batches[0]['srclen'].max().item()
-                #     max_tgt_len = batches[0]['tgtlen'].max().item()
-                # else:
-                #     new_src_observation_batch = observation_batch["src"]
-                #     new_src_batch = batches[0]['src']
-                #     new_tgt_observation_batch = observation_batch["tgt"]
-                #     new_tgt_batch = batches[0]['tgt']
-                #     if batches[0]['srclen'].max().item() > max_src_len:
-                #         max_src_len = batches[0]['srclen'].max().item()
-                #         temp = torch.ones(new_src_observation_batch.shape[0], max_src_len, new_src_observation_batch.shape[2], dtype=new_src_observation_batch.dtype, device=new_src_observation_batch.device)
-                #         for i, t in enumerate(observation_batch['src']):
-                #             temp[i, :t.shape[0], :t.shape[1]] = t
-                #         new_src_observation_batch = temp
-                #     elif batches[0]['srclen'].max().item() < max_src_len:
-                #         temp = torch.ones(new_src_batch.shape[0], max_src_len, new_src_batch.shape[2], dtype=new_src_batch.dtype, device=new_src_batch.device)
-                #         for i, t in enumerate(batches[0]['src']):
-                #             temp[i, :t.shape[0], :t.shape[1]] = t
-                #         new_src_batch = temp
-                #     if batches[0]['tgtlen'].max().item() > max_tgt_len:
-                #         max_tgt_len = batches[0]['tgtlen'].max().item()
-                #         temp = torch.ones(new_tgt_observation_batch.shape[0], max_tgt_len, new_tgt_observation_batch.shape[2], dtype=new_tgt_observation_batch.dtype, device=new_tgt_observation_batch.device)
-                #         for i, t in enumerate(observation_batch['tgt']):
-                #             temp[i, :t.shape[0], :t.shape[1]] = t
-                #         new_tgt_observation_batch = temp
-                #     elif batches[0]['tgtlen'].max().item() < max_tgt_len:
-                #         temp = torch.ones(new_tgt_batch.shape[0], max_tgt_len, new_tgt_batch.shape[2], dtype=new_tgt_batch.dtype, device=new_tgt_batch.device)
-                #         for i, t in enumerate(batches[0]['tgt']):
-                #             temp[i, :t.shape[0], :t.shape[1]] = t
-                #         new_tgt_batch = temp
+                i = (i + 1) % (len(generators) - 1) # TEMP: -1 to remove the reward task
 
-                #     observation_batch["src"] = torch.cat((new_src_observation_batch, new_src_batch[:n_obs]), 0)
-                #     observation_batch["srclen"] = torch.cat((observation_batch["srclen"], batches[0]['srclen'][:n_obs]), 0)
-                #     observation_batch["tgt"] = torch.cat((new_tgt_observation_batch, new_tgt_batch[:n_obs]), 0)
-                #     observation_batch["tgtlen"] = torch.cat((observation_batch["tgtlen"], batches[0]['tgtlen'][:n_obs]), 0)
-                #     observation_batch["ind_in_bucket"] = observation_batch["ind_in_bucket"] + batches[0]['ind_in_bucket'][:n_obs]
-                #     observation_batch["cid"] = observation_batch["cid"] + batches[0]['cid'][:n_obs]
-                #     observation_batch["cid_line_number"] = observation_batch["cid_line_number"] + batches[0]['cid_line_number'][:n_obs]
-                # n_obs -= len(batches[0]['cid'])
-
-            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # -1 to remove the reward task
+            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # TEMP: -1 to remove the reward task
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -470,10 +404,9 @@ class Trainer(object):
                 if oom_occured:
                     logger.info("OOM occured, skipping task update")
                 else:
-                    # step_stats = onmt.utils.Statistics()
-                    # batches, _ = next(generators[task_id])
-                    batches, _ = next(generators[-1])
-                    stats = self.compute_reward(batches)
+                    if reward_batch is None:
+                        reward_batch, _ = next(generators[-1])
+                    stats = self.compute_reward(reward_batch)
                     reward = stats.xent()
                     state = None
                     if step >= self.curriculum_learning_warmup_steps:
@@ -511,6 +444,10 @@ class Trainer(object):
                 self.model_saver.save(step, moving_average=self.moving_average)
 
             if train_steps > 0 and step >= train_steps:
+                if self.curriculum_learning_enabled and scheduler is not None:
+                    scheduler.save_scheduler(
+                        f"{self.opts.save_model}-scheduler.pt",
+                    )
                 break
 
         if self.model_saver is not None:
@@ -518,7 +455,6 @@ class Trainer(object):
         return total_stats
     
     def get_state(self, observation_batches):
-        start_time = time.time()
         self.model.eval()
         losses = []
         with torch.no_grad():
@@ -526,25 +462,17 @@ class Trainer(object):
                 src = batch["src"]
                 src_len = batch["srclen"]
                 tgt = batch["tgt"]
-
                 with torch.cuda.amp.autocast(enabled=self.optim.amp):
-                    # F-prop through the model.
                     model_out, attns = self.model(
                         src, tgt, src_len, with_align=self.with_align
                     )
-
-                    # Compute loss.
                     loss, _ = self.valid_loss(batch, model_out, attns)
                     losses.append(loss.item())
-     
         self.model.train()
         logger.info("losses: {}".format(losses))
-        logger.info("state computation took: {} s.".format(time.time() - start_time))
         return torch.tensor(losses, device=src.device)
 
-    
     def compute_reward(self, true_batches):
-        # Set model in validating mode.
         self.model.eval()
         with torch.no_grad():
             stats = onmt.utils.Statistics()
@@ -552,19 +480,12 @@ class Trainer(object):
                 src = batch["src"]
                 src_len = batch["srclen"]
                 tgt = batch["tgt"]
-
                 with torch.cuda.amp.autocast(enabled=self.optim.amp):
-                    # F-prop through the model.
                     model_out, attns = self.model(
                         src, tgt, src_len, with_align=self.with_align
                     )
-
-                    # Compute loss.
                     _, batch_stats = self.valid_loss(batch, model_out, attns)
-
                     stats.update(batch_stats)
-
-        # Set model back to training mode.
         self.model.train()
         return stats
 

@@ -43,3 +43,7 @@ class Scheduler(object):
     
     def next_task(self, step, reward, state):
         logger.info(f"Step: {step} - Next task scheduling")
+
+    def save_scheduler(self, path):
+        """Save the scheduler state."""
+        pass
