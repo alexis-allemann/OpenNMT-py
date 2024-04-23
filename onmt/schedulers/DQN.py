@@ -232,15 +232,15 @@ class DQNScheduler(Scheduler):
             delta_reward = torch.tensor([self.delta_reward], device=self.device)
 
             if step >= self.warmup_steps:
+                next_state = state.clone().detach().unsqueeze(0)
+
+                # Store the transition in memory
+                self.memory.push(self.last_state, self.action, next_state, delta_reward)
+
+                # Move to the next state
+                self.last_state = next_state
+
                 if len(self.memory) >= self.MIN_REPLAY_CAPACITY:
-                    next_state = state.clone().detach().unsqueeze(0)
-
-                    # Store the transition in memory
-                    self.memory.push(self.last_state, self.action, next_state, delta_reward)
-
-                    # Move to the next state
-                    self.last_state = next_state
-
                     # Perform one step of the optimization (on the policy network)
                     self.optimize_model()
 
