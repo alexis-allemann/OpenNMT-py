@@ -444,11 +444,12 @@ class Trainer(object):
                 self.model_saver.save(step, moving_average=self.moving_average)
 
             if train_steps > 0 and step >= train_steps:
-                if self.curriculum_learning_enabled and scheduler is not None:
-                    scheduler.save_scheduler(
-                        f"{self.opts.save_model}-scheduler.pt",
-                    )
                 break
+
+        if self.curriculum_learning_enabled and scheduler is not None:
+            scheduler.save_scheduler(
+                f"{self.opts.save_model}-scheduler.pt",
+            )
 
         if self.model_saver is not None:
             self.model_saver.save(step, moving_average=self.moving_average)
