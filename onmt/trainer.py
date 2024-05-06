@@ -442,6 +442,10 @@ class Trainer(object):
                 save_checkpoint_steps != 0 and step % save_checkpoint_steps == 0
             ):
                 self.model_saver.save(step, moving_average=self.moving_average)
+                if self.curriculum_learning_enabled and scheduler is not None:
+                    scheduler.save_scheduler(
+                        f"{self.opts.save_model}-{step}-scheduler.pt",
+                    )
 
             if train_steps > 0 and step >= train_steps:
                 break
