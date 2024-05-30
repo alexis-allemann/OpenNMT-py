@@ -71,6 +71,9 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_steps = opt.curriculum_learning_steps
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
     curriculum_learning_nb_states = opt.curriculum_learning_nb_states
+    curriculum_learning_hrl_warmup = opt.curriculum_learning_hrl_warmup
+    curriculum_learning_hrl_wamup_tasks = opt.curriculum_learning_hrl_wamup_tasks
+    curriculum_learning_reward_task_id = opt.curriculum_learning_reward_task_id
     curriculum_learning_warmup_steps = opt.curriculum_learning_warmup_steps
     reward_batch_size = opt.reward_batch_size
 
@@ -114,6 +117,9 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_warmup_steps=curriculum_learning_warmup_steps,
         reward_batch_size=reward_batch_size,
         curriculum_learning_nb_states=curriculum_learning_nb_states,
+        curriculum_learning_hrl_warmup = curriculum_learning_hrl_warmup
+        curriculum_learning_hrl_wamup_tasks = curriculum_learning_hrl_wamup_tasks
+        curriculum_learning_reward_task_id = curriculum_learning_reward_task_id
         opts=opt
     )
     return trainer
@@ -191,6 +197,9 @@ class Trainer(object):
         curriculum_learning_warmup_steps=0,
         reward_batch_size=1000,
         curriculum_learning_nb_states=25,
+        curriculum_learning_hrl_warmup=False,
+        curriculum_learning_hrl_wamup_tasks=[],
+        curriculum_learning_reward_task_id=-1,
         opts=None
     ):
         # Basic attributes.
@@ -230,6 +239,7 @@ class Trainer(object):
         self.curriculum_learning_warmup_steps = curriculum_learning_warmup_steps
         self.reward_batch_size = reward_batch_size
         self.curriculum_learning_nb_states = curriculum_learning_nb_states
+        self.curriculum_learning_reward_task_id = curriculum_learning_reward_task_id
         self.opts = opts
 
         for i in range(len(self.accum_count_l)):
@@ -370,9 +380,12 @@ class Trainer(object):
                 }
                 observation_batch.append(new_batch)
                 nb_states += 1
-                i = (i + 1) % (len(generators) - 1) # TEMP: -1 to remove the reward task
+                i = (i + 1) % (len(generators))
+                if i == self.curriculum_learning_reward_task_id:
+                    i = (i + 1) % (len(generators))
 
-            scheduler = self.curriculum_learning_scheduler(len(generators)-1, nb_states, self.opts, device_id) # TEMP: -1 to remove the reward task
+            nb_generators = len(generators) if self.curriculum_learning_reward_task_id == -1 else len(generators) - 1
+            scheduler = self.curriculum_learning_scheduler(nb_generators, nb_states, self.opts, device_id)
         
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -405,7 +418,7 @@ class Trainer(object):
                     logger.info("OOM occured, skipping task update")
                 else:
                     if reward_batch is None:
-                        reward_batch, _ = next(generators[-1])
+                        reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id])
                     stats = self.compute_reward(reward_batch)
                     reward = stats.xent()
                     state = None

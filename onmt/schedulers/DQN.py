@@ -255,8 +255,10 @@ class DQNScheduler(Scheduler):
                 else:
                     self.action = torch.tensor([[np.random.choice(self.nb_actions)]], device=self.device, dtype=torch.long)
             else:
-                hrl_actions = [1,3,5,7] # TODO: Hardcoded for now but should be passed as an argument
-                self.action = torch.tensor([[np.random.choice(hrl_actions)]], device=self.device, dtype=torch.long)
+                available_actions = list(range(self.nb_actions))
+                if self.hrl_warmup:
+                    available_actions = self.hrl_wamup_tasks
+                self.action = torch.tensor([[np.random.choice(available_actions)]], device=self.device, dtype=torch.long)
             self._log(step)
         
         actions = all_gather_list(self.action) # Gather the actions from all GPUs

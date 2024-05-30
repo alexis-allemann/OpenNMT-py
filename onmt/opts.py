@@ -162,6 +162,25 @@ def _add_logging_opts(parser, is_train=True):
             type=int,
             default=256,
         )
+        group.add(
+            "--curriculum_learning_hrl_wamup",
+            "-curriculum_learning_hrl_wamup",
+            type=bool,
+            default=False,
+        )
+        group.add(
+            "--curriculum_learning_hrl_wamup_tasks",
+            "-curriculum_learning_hrl_wamup_tasks",
+            default=[],
+            nargs="+",
+            help="List of tasks to warmup on",
+        )
+        group.add(
+            "--curriculum_learning_reward_task_id",
+            "-curriculum_learning_reward_task_id",
+            type=int,
+            default=-1,
+        )
 
     else:
         # Options only during inference

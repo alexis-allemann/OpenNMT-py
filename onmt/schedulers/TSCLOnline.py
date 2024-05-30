@@ -91,7 +91,10 @@ class TSCLOnline(Scheduler):
         else:
             if step < self.warmup_steps:
                 logger.info("Warmup step - Random task selection.")
-                task_id = np.random.choice(self.nb_actions)
+                available_actions = list(range(self.nb_actions))
+                if self.hrl_warmup:
+                    available_actions = self.hrl_wamup_tasks
+                task_id = np.random.choice(available_actions)
             else:
                 if self.policy == "epsilon_greedy":
                     task_id = self._epsilon_greedy()
