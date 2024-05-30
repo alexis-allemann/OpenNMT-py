@@ -117,9 +117,9 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_warmup_steps=curriculum_learning_warmup_steps,
         reward_batch_size=reward_batch_size,
         curriculum_learning_nb_states=curriculum_learning_nb_states,
-        curriculum_learning_hrl_warmup = curriculum_learning_hrl_warmup
-        curriculum_learning_hrl_wamup_tasks = curriculum_learning_hrl_wamup_tasks
-        curriculum_learning_reward_task_id = curriculum_learning_reward_task_id
+        curriculum_learning_hrl_warmup = curriculum_learning_hrl_warmup,
+        curriculum_learning_hrl_wamup_tasks = curriculum_learning_hrl_wamup_tasks,
+        curriculum_learning_reward_task_id = curriculum_learning_reward_task_id,
         opts=opt
     )
     return trainer
