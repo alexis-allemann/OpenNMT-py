@@ -72,7 +72,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
     curriculum_learning_nb_states = opt.curriculum_learning_nb_states
     curriculum_learning_hrl_warmup = opt.curriculum_learning_hrl_warmup
-    curriculum_learning_hrl_wamup_tasks = opt.curriculum_learning_hrl_wamup_tasks
+    curriculum_learning_hrl_warmup_tasks = opt.curriculum_learning_hrl_warmup_tasks
     curriculum_learning_reward_task_id = opt.curriculum_learning_reward_task_id
     curriculum_learning_warmup_steps = opt.curriculum_learning_warmup_steps
     reward_batch_size = opt.reward_batch_size
@@ -118,7 +118,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         reward_batch_size=reward_batch_size,
         curriculum_learning_nb_states=curriculum_learning_nb_states,
         curriculum_learning_hrl_warmup = curriculum_learning_hrl_warmup,
-        curriculum_learning_hrl_wamup_tasks = curriculum_learning_hrl_wamup_tasks,
+        curriculum_learning_hrl_warmup_tasks = curriculum_learning_hrl_warmup_tasks,
         curriculum_learning_reward_task_id = curriculum_learning_reward_task_id,
         opts=opt
     )
@@ -198,7 +198,7 @@ class Trainer(object):
         reward_batch_size=1000,
         curriculum_learning_nb_states=25,
         curriculum_learning_hrl_warmup=False,
-        curriculum_learning_hrl_wamup_tasks=[],
+        curriculum_learning_hrl_warmup_tasks=[],
         curriculum_learning_reward_task_id=-1,
         opts=None
     ):
@@ -418,7 +418,7 @@ class Trainer(object):
                     logger.info("OOM occured, skipping task update")
                 else:
                     if reward_batch is None:
-                        reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id])
+                        reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id-1])
                     stats = self.compute_reward(reward_batch)
                     reward = stats.xent()
                     state = None

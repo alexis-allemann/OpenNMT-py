@@ -13,7 +13,7 @@ class Scheduler(object):
         self.opts = opts
         self.warmup_steps = opts.curriculum_learning_warmup_steps
         self.hrl_warmup = opts.curriculum_learning_hrl_warmup
-        self.hrl_wamup_tasks = [i-1 for i in opts.curriculum_learning_hrl_warmup_tasks]
+        self.hrl_warmup_tasks = [int(i)-1 for i in opts.curriculum_learning_hrl_warmup_tasks]
         self.device_id = device_id
         self._parse_opts()
     

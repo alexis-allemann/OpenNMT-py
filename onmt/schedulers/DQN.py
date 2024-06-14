@@ -53,7 +53,7 @@ class DQNScheduler(Scheduler):
 
     def __init__(self, nb_actions, nb_states, opts, device_id) -> None:
         super().__init__(nb_actions, nb_states, opts, device_id)
-        self.lastReward = 0
+        self.reward_history = deque([], maxlen=100)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.action = torch.zeros((1,1), dtype=torch.int, device=self.device)
         default_state = np.zeros(nb_states)
@@ -227,8 +227,9 @@ class DQNScheduler(Scheduler):
         super().next_task(step, reward, state)
 
         if self.device_id == 0:
-            self.delta_reward = self.lastReward - reward
-            self.lastReward = reward
+            self.reward_history.append(reward)
+            mean_reward = np.mean(self.reward_history)
+            self.delta_reward = mean_reward - reward
             delta_reward = torch.tensor([self.delta_reward], device=self.device)
 
             if step >= self.warmup_steps:
@@ -257,7 +258,7 @@ class DQNScheduler(Scheduler):
             else:
                 available_actions = list(range(self.nb_actions))
                 if self.hrl_warmup:
-                    available_actions = self.hrl_wamup_tasks
+                    available_actions = self.hrl_warmup_tasks
                 self.action = torch.tensor([[np.random.choice(available_actions)]], device=self.device, dtype=torch.long)
             self._log(step)
         
