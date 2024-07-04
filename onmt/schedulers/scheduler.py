@@ -49,3 +49,11 @@ class Scheduler(object):
     def save_scheduler(self, path):
         """Save the scheduler state."""
         pass
+
+    def needs_reward(self):
+        """Return whether the scheduler needs reward to update."""
+        return True
+    
+    def needs_state(self):
+        """Return whether the scheduler needs state to update."""
+        return True

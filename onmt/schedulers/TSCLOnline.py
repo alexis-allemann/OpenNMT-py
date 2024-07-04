@@ -124,3 +124,6 @@ class TSCLOnline(Scheduler):
                 qvalues += ", "
         qvalues += "]"
         logger.info(f"Step:{step+1};GPU:{self.device_id};Q-values:{qvalues};Task:{self.current_task}")
+
+    def needs_state(self):
+        return False

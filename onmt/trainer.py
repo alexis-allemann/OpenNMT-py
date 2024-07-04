@@ -417,12 +417,14 @@ class Trainer(object):
                 if oom_occured:
                     logger.info("OOM occured, skipping task update")
                 else:
-                    if reward_batch is None:
-                        reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id-1])
-                    stats = self.compute_reward(reward_batch)
-                    reward = stats.xent()
+                    reward = None
+                    if scheduler.needs_reward():
+                        if reward_batch is None:
+                            reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id-1])
+                        stats = self.compute_reward(reward_batch)
+                        reward = stats.xent()
                     state = None
-                    if step >= self.curriculum_learning_warmup_steps:
+                    if scheduler.needs_state() and step >= self.curriculum_learning_warmup_steps:
                         state = self.get_state(observation_batch)
                     task_id = scheduler.next_task(step, reward, state)
 
