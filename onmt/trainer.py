@@ -8,14 +8,11 @@
           things to users(i.e. how to do it). Also see train.py(one of the
           users of this library) for the strategy things we do.
 """
-import copy
 import sys
 import time
 import traceback
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 
 import onmt.utils
 from onmt.schedulers import get_scheduler_cls
@@ -71,8 +68,7 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
     curriculum_learning_steps = opt.curriculum_learning_steps
     curriculum_learning_scheduler = opt.curriculum_learning_scheduler
     curriculum_learning_nb_states = opt.curriculum_learning_nb_states
-    curriculum_learning_hrl_warmup = opt.curriculum_learning_hrl_warmup
-    curriculum_learning_hrl_warmup_tasks = opt.curriculum_learning_hrl_warmup_tasks
+    curriculum_learning_states_batch_size = opt.curriculum_learning_states_batch_size
     curriculum_learning_reward_task_id = opt.curriculum_learning_reward_task_id
     curriculum_learning_warmup_steps = opt.curriculum_learning_warmup_steps
     reward_batch_size = opt.reward_batch_size
@@ -117,10 +113,9 @@ def build_trainer(opt, device_id, model, vocabs, optim, model_saver=None):
         curriculum_learning_warmup_steps=curriculum_learning_warmup_steps,
         reward_batch_size=reward_batch_size,
         curriculum_learning_nb_states=curriculum_learning_nb_states,
-        curriculum_learning_hrl_warmup = curriculum_learning_hrl_warmup,
-        curriculum_learning_hrl_warmup_tasks = curriculum_learning_hrl_warmup_tasks,
-        curriculum_learning_reward_task_id = curriculum_learning_reward_task_id,
-        opts=opt
+        curriculum_learning_states_batch_size=curriculum_learning_states_batch_size,
+        curriculum_learning_reward_task_id=curriculum_learning_reward_task_id,
+        opts=opt,
     )
     return trainer
 
@@ -197,10 +192,9 @@ class Trainer(object):
         curriculum_learning_warmup_steps=0,
         reward_batch_size=1000,
         curriculum_learning_nb_states=25,
-        curriculum_learning_hrl_warmup=False,
-        curriculum_learning_hrl_warmup_tasks=[],
+        curriculum_learning_states_batch_size=10,
         curriculum_learning_reward_task_id=-1,
-        opts=None
+        opts=None,
     ):
         # Basic attributes.
 
@@ -239,6 +233,9 @@ class Trainer(object):
         self.curriculum_learning_warmup_steps = curriculum_learning_warmup_steps
         self.reward_batch_size = reward_batch_size
         self.curriculum_learning_nb_states = curriculum_learning_nb_states
+        self.curriculum_learning_states_batch_size = (
+            curriculum_learning_states_batch_size
+        )
         self.curriculum_learning_reward_task_id = curriculum_learning_reward_task_id
         self.opts = opts
 
@@ -360,38 +357,61 @@ class Trainer(object):
 
         # Initialize curriculum learning's tasks scheduler
         scheduler = None
-        task_id = 0
+        action_id = 0
         nb_states = 0
-        n_obs = 10
-        observation_batch = []
+        observation_batches = []
         reward_batch = None
         i = 0
-        if self.curriculum_learning_enabled:
-            while nb_states < self.curriculum_learning_nb_states:
-                batches, _ = next(generators[i])
-                new_batch = {
-                    'src': batches[0]['src'][:n_obs],
-                    'srclen': batches[0]['srclen'][:n_obs],
-                    'tgt': batches[0]['tgt'][:n_obs],
-                    'tgtlen': batches[0]['tgtlen'][:n_obs],
-                    'ind_in_bucket': batches[0]['ind_in_bucket'][:n_obs],
-                    'cid': batches[0]['cid'][:n_obs],
-                    'cid_line_number': batches[0]['cid_line_number'][:n_obs],
-                }
-                observation_batch.append(new_batch)
-                nb_states += 1
-                i = (i + 1) % (len(generators))
-                if i == self.curriculum_learning_reward_task_id:
-                    i = (i + 1) % (len(generators))
 
-            nb_generators = len(generators) if self.curriculum_learning_reward_task_id == -1 else len(generators) - 1
-            scheduler = self.curriculum_learning_scheduler(nb_generators, nb_states, self.opts, device_id)
-        
+        if self.curriculum_learning_enabled:
+            nb_generators = (
+                len(generators)
+                if self.curriculum_learning_reward_task_id == -1
+                else len(generators) - 1
+            )
+            corpora_infos = train_iters[0].data_iter.dataset.corpora_info.items()
+            scheduler = self.curriculum_learning_scheduler(
+                corpora_infos, nb_generators, nb_states, self.opts, device_id
+            )
+
+            # Build the prototype batch if the scheduler needs a state
+            if scheduler.needs_state():
+                while nb_states < self.curriculum_learning_nb_states:
+                    batches, _ = next(generators[i])
+                    new_batch = {
+                        "src": batches[0]["src"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "srclen": batches[0]["srclen"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "tgt": batches[0]["tgt"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "tgtlen": batches[0]["tgtlen"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "ind_in_bucket": batches[0]["ind_in_bucket"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "cid": batches[0]["cid"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                        "cid_line_number": batches[0]["cid_line_number"][
+                            : self.curriculum_learning_states_batch_size
+                        ],
+                    }
+                    observation_batches.append(new_batch)
+                    nb_states += 1
+                    i = (i + 1) % (len(generators))
+                    if i == self.curriculum_learning_reward_task_id:
+                        i = (i + 1) % (len(generators))
+
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
 
         while self.optim.training_step < train_steps:
-            batches, normalization = next(generators[task_id])
+            batches, normalization = next(generators[action_id])
 
             step = self.optim.training_step
             # UPDATE DROPOUT
@@ -420,13 +440,19 @@ class Trainer(object):
                     reward = None
                     if scheduler.needs_reward():
                         if reward_batch is None:
-                            reward_batch, _ = next(generators[self.curriculum_learning_reward_task_id-1])
+                            generator_id = self.curriculum_learning_reward_task_id - 1 if self.curriculum_learning_reward_task_id != -1 else action_id
+                            reward_batch, _ = next(
+                                generators[generator_id]
+                            )
                         stats = self.compute_reward(reward_batch)
                         reward = stats.xent()
                     state = None
-                    if scheduler.needs_state() and step >= self.curriculum_learning_warmup_steps:
-                        state = self.get_state(observation_batch)
-                    task_id = scheduler.next_task(step, reward, state)
+                    if (
+                        scheduler.needs_state()
+                        and step >= self.curriculum_learning_warmup_steps
+                    ):
+                        state = self.get_state(observation_batches)
+                    action_id = scheduler.next_action(step, reward, state)
 
             report_stats = self._maybe_report_training(
                 step, train_steps, self.optim.learning_rate(), report_stats
@@ -473,7 +499,7 @@ class Trainer(object):
         if self.model_saver is not None:
             self.model_saver.save(step, moving_average=self.moving_average)
         return total_stats
-    
+
     def get_state(self, observation_batches):
         self.model.eval()
         losses = []

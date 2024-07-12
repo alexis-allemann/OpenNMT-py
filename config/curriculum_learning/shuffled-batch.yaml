@@ -1,0 +1,53 @@
+# General
+gpu_ranks: [0, 1]
+master_port: 10001
+save_checkpoint_steps: 4000
+train_steps: 100001
+log_file_level: INFO
+overwrite: True
+
+# Vocabulary
+src_vocab: "data/vocab/bpe-vocab-en-be-ru-az-tr-gl-pt-sk-cs.vocab"
+share_vocab: true
+src_words_min_frequency: 2
+tgt_words_min_frequency: 2
+
+# Corpus
+data:
+  shuffled:
+    path_src: "data/transformed/shuffled/train.shuffled"
+    path_tgt: "data/transformed/shuffled/train.en"
+    weight: 1
+    task: 0
+
+# Batching
+batch_type: tokens
+batch_size: 8000
+valid_batch_size: 8000
+prefetch_factor: 10
+bucket_size: 80000
+
+# Optimization
+optim: adam
+learning_rate: 10.0
+adam_beta2: 0.998
+decay_method: noam
+accum_count: 2
+warmup_steps: 16000
+label_smoothing: 0.1
+max_grad_norm: 5
+param_init: 0
+param_init_glorot: true
+normalization: tokens
+
+# Model
+encoder_type: transformer
+decoder_type: transformer
+position_encoding: true
+enc_layers: 6
+dec_layers: 6
+heads: 8
+hidden_size: 512
+word_vec_size: 512
+transformer_ff: 2048
+dropout: 0.3

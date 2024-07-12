@@ -1,0 +1,98 @@
+# General
+gpu_ranks: [0, 1]
+master_port: 10001
+save_checkpoint_steps: 4000
+train_steps: 100001
+log_file_level: INFO
+overwrite: True
+
+# Vocabulary
+src_vocab: "data/vocab/bpe-vocab-en-be-ru-az-tr-gl-pt-sk-cs.vocab"
+share_vocab: true
+src_words_min_frequency: 2
+tgt_words_min_frequency: 2
+
+# Corpus
+data:
+  azerbaijani:
+    path_src: "data/transformed/az-en/train.az"
+    path_tgt: "data/transformed/az-en/train.en"
+    weight: 1
+    task: 1
+  turkish:
+    path_src: "data/transformed/tr-en/train.tr"
+    path_tgt: "data/transformed/tr-en/train.en"
+    weight: 1
+    task: 2
+  belarusian:
+    path_src: "data/transformed/be-en/train.be"
+    path_tgt: "data/transformed/be-en/train.en"
+    weight: 1
+    task: 3
+  russian:
+    path_src: "data/transformed/ru-en/train.ru"
+    path_tgt: "data/transformed/ru-en/train.en"
+    weight: 1
+    task: 4
+  slovak:
+    path_src: "data/transformed/sk-en/train.sk"
+    path_tgt: "data/transformed/sk-en/train.en"
+    weight: 1
+    task: 5
+  czech:
+    path_src: "data/transformed/cs-en/train.cs"
+    path_tgt: "data/transformed/cs-en/train.en"
+    weight: 1
+    task: 6
+  galician:
+    path_src: "data/transformed/gl-en/train.gl"
+    path_tgt: "data/transformed/gl-en/train.en"
+    weight: 1
+    task: 7
+  portuguese:
+    path_src: "data/transformed/pt-en/train.pt"
+    path_tgt: "data/transformed/pt-en/train.en"
+    weight: 1
+    task: 8
+
+# Batching
+batch_type: tokens
+batch_size: 8000
+valid_batch_size: 8000
+prefetch_factor: 10
+bucket_size: 80000
+
+# Optimization
+optim: adam
+learning_rate: 10.0
+adam_beta2: 0.998
+decay_method: noam
+accum_count: 2
+warmup_steps: 16000
+label_smoothing: 0.1
+max_grad_norm: 5
+param_init: 0
+param_init_glorot: true
+normalization: tokens
+
+# Model
+encoder_type: transformer
+decoder_type: transformer
+position_encoding: true
+enc_layers: 6
+dec_layers: 6
+heads: 8
+hidden_size: 512
+word_vec_size: 512
+transformer_ff: 2048
+dropout: 0.3
+
+# Curriculum learning
+curriculum_learning_enabled: true
+curriculum_learning_steps: 1
+curriculum_learning_scheduler: "tscl"
+curriculum_learning_hrl_warmup: true
+curriculum_learning_warmup_steps: 16000
+curriculum_learning_hrl_warmup_tasks: [2,4,6,8]
+tscl_smoothing: 0.1
+tscl_eps: 0.1

@@ -211,7 +211,6 @@ def main(opt, device_id):
         for corpus in opt.data.keys():
             if opt.data[corpus].get("task", None):
                 tasks_ids.add(opt.data[corpus]["task"])
-        print(f"Tasks ids: {tasks_ids}")
         for i in range(len(tasks_ids)):
             _train_iter = build_dynamic_dataset_iter(
                 opt,
@@ -223,7 +222,9 @@ def main(opt, device_id):
                 stride=stride,
                 offset=offset,
                 device_id=device_id,
-                batch_size=opt.batch_size if i < len(tasks_ids) - 1 else opt.reward_batch_size, # -1 to remove the reward task
+                batch_size=opt.batch_size
+                if i < len(tasks_ids) - 1
+                else opt.reward_batch_size,  # -1 to remove the reward task
             )
             train_iters.append(_train_iter)
     else:

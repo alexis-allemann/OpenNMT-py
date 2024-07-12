@@ -163,6 +163,12 @@ def _add_logging_opts(parser, is_train=True):
             default=256,
         )
         group.add(
+            "--curriculum_learning_states_batch_size",
+            "-curriculum_learning_states_batch_size",
+            type=int,
+            default=10,
+        )
+        group.add(
             "--curriculum_learning_hrl_warmup",
             "-curriculum_learning_hrl_warmup",
             type=bool,
