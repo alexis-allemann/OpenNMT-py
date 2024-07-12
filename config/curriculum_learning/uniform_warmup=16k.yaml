@@ -93,4 +93,4 @@ curriculum_learning_steps: 1
 curriculum_learning_scheduler: "uniform"
 curriculum_learning_hrl_warmup: true
 curriculum_learning_warmup_steps: 16000
-curriculum_learning_hrl_warmup_tasks: [2,4,6,8]
+curriculum_learning_hrl_warmup_actions: [2,4,6,8]

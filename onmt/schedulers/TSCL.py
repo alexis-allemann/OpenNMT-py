@@ -9,11 +9,12 @@ from .scheduler import Scheduler
 class TSCL(Scheduler):
     """TSCL scheduling class."""
 
-    def __init__(self, copora_infos, nb_actions, _, opts, device_id) -> None:
-        super().__init__(copora_infos, nb_actions, opts, device_id)
+    def __init__(self, copora_infos, nb_actions, nb_states, opts, device_id) -> None:
+        super().__init__(copora_infos, nb_actions, nb_states, opts, device_id)
         self.Q = np.zeros(nb_actions)
-        self.last_observation_by_task = np.zeros(nb_actions)
-        self.unvisited_tasks = list(range(nb_actions))
+        self.last_observation_by_action = np.zeros(nb_actions)
+        self.unvisited_actions = list(range(nb_actions))
+        self.action = 0
 
     @classmethod
     def add_options(cls, parser):
@@ -47,32 +48,28 @@ class TSCL(Scheduler):
         self.smoothing = self.opts.tscl_smoothing
         self.epsilon = self.opts.tscl_eps
 
-    def init_action(self, task, reward):
-        self.last_observation_by_task[task] = reward
-        self.Q[task] = reward * self.smoothing
-
     def needs_state(self):
         return False
 
     def next_action(self, step, new_reward, state):
         super().next_action(step, new_reward, state)
 
-        reward = self.last_observation_by_task[self.action] - new_reward
-        self.last_observation_by_task[self.action] = new_reward
+        reward = self.last_observation_by_action[self.action] - new_reward
+        self.last_observation_by_action[self.action] = new_reward
         self.Q[self.action] = (
             self.smoothing * reward + (1 - self.smoothing) * self.Q[self.action]
         )
 
-        if len(self.unvisited_tasks) > 0:
-            logger.info(f"Unvisited tasks: {self.unvisited_tasks}")
-            action = np.random.choice(self.unvisited_tasks)
-            self.unvisited_tasks.remove(action)
+        if len(self.unvisited_actions) > 0:
+            logger.info(f"Unvisited actions: {self.unvisited_actions}")
+            action = np.random.choice(self.unvisited_actions)
+            self.unvisited_actions.remove(action)
         else:
             if step < self.warmup_steps:
-                logger.info("Warmup step - Random task selection.")
+                logger.info("Warmup step - Random action selection.")
                 available_actions = list(range(self.nb_actions))
                 if self.hrl_warmup:
-                    available_actions = self.hrl_warmup_tasks
+                    available_actions = self.hrl_warmup_actions
                 action = np.random.choice(available_actions)
             else:
                 action = self._epsilon_greedy()
@@ -83,7 +80,7 @@ class TSCL(Scheduler):
 
     def _epsilon_greedy(self):
         if np.random.rand() < self.epsilon:
-            logger.info("E-greedy choice - Random task selection.")
+            logger.info("E-greedy choice - Random action selection.")
             return np.random.choice(self.nb_actions)
         else:
             return np.argmax(np.abs(self.Q))

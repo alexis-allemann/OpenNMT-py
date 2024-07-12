@@ -14,8 +14,8 @@ class Scheduler(object):
         self.opts = opts
         self.warmup_steps = opts.curriculum_learning_warmup_steps
         self.hrl_warmup = opts.curriculum_learning_hrl_warmup
-        self.hrl_warmup_tasks = [
-            int(i) - 1 for i in opts.curriculum_learning_hrl_warmup_tasks
+        self.hrl_warmup_actions = [
+            int(i) - 1 for i in opts.curriculum_learning_hrl_warmup_actions
         ]
         self.device_id = device_id
         self._parse_opts()
@@ -36,10 +36,6 @@ class Scheduler(object):
         This should be override if there are attributes other than self.opts.
         To make sure we recover from picked state.
         """
-        pass
-
-    def init_action(self, action, reward):
-        """Initialize an action."""
         pass
 
     def next_action(self, step, reward, state):

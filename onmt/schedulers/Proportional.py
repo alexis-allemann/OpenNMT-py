@@ -28,7 +28,7 @@ class Proportional(Scheduler):
         else:
             available_actions = list(range(self.nb_actions))
             if self.hrl_warmup:
-                available_actions = self.hrl_warmup_tasks
+                available_actions = self.hrl_warmup_actions
             self.action = np.random.choice(available_actions)
         self._log(step)
         return self.action

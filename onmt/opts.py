@@ -175,8 +175,8 @@ def _add_logging_opts(parser, is_train=True):
             default=False,
         )
         group.add(
-            "--curriculum_learning_hrl_warmup_tasks",
-            "-curriculum_learning_hrl_warmup_tasks",
+            "--curriculum_learning_hrl_warmup_actions",
+            "-curriculum_learning_hrl_warmup_actions",
             default=[],
             nargs="+",
             help="List of tasks to warmup on",

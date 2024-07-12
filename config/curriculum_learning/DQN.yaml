@@ -98,7 +98,7 @@ curriculum_learning_steps: 10
 curriculum_learning_scheduler: "dqn"
 curriculum_learning_hrl_warmup: true
 curriculum_learning_warmup_steps: 16000
-curriculum_learning_hrl_warmup_tasks: [2,4,6,8]
+curriculum_learning_hrl_warmup_actions: [2,4,6,8]
 curriculum_learning_reward_task_id: 9
 curriculum_learning_nb_states: 200
 curriculum_learning_states_batch_size: 10
