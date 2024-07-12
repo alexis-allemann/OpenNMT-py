@@ -255,7 +255,8 @@ class DQNScheduler(Scheduler):
                 next_state = state.clone().detach().unsqueeze(0)
 
                 # Store the transition in memory
-                self.memory.push(self.last_state, self.action, next_state, delta_reward)
+                if self.last_state.shape[1] != 0:
+                    self.memory.push(self.last_state, self.action, next_state, delta_reward)
 
                 # Move to the next state
                 self.last_state = next_state

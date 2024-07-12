@@ -371,7 +371,7 @@ class Trainer(object):
             )
             corpora_infos = train_iters[0].data_iter.dataset.corpora_info.items()
             scheduler = self.curriculum_learning_scheduler(
-                corpora_infos, nb_generators, nb_states, self.opts, device_id
+                corpora_infos, nb_generators, self.curriculum_learning_nb_states, self.opts, device_id
             )
 
             # Build the prototype batch if the scheduler needs a state
@@ -515,7 +515,6 @@ class Trainer(object):
                     loss, _ = self.valid_loss(batch, model_out, attns)
                     losses.append(loss.item())
         self.model.train()
-        logger.info("losses: {}".format(losses))
         return torch.tensor(losses, device=src.device)
 
     def compute_reward(self, true_batches):
