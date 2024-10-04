@@ -4,8 +4,7 @@ This is a fork of [`OpenNMT-py`](https://github.com/OpenNMT/OpenNMT-py) library.
 
 This is the code corresponding to the study published in the following paper:
 
-- Allemann A., Atrio À. & Popescu-Belis A. (2024) - Optimizing the Training Schedule of Multilingual NMT
-  using Reinforcement Learning. To appear in the *Proceedings of the The 2024 Conference on Empirical Methods in Natural Language Processing (EMNLP)*, Miami, Florida, November 12-16 2024.
+- Allemann A., Atrio À. & Popescu-Belis A. (2024) - Optimizing the Training Schedule of Multilingual NMT using Reinforcement Learning.
 
 ## Implementations of baselines and RL-based algorithms
 
